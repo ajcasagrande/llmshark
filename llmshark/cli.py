@@ -12,7 +12,19 @@ from typing import List, Optional
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import (
+    Progress, 
+    SpinnerColumn, 
+    TextColumn, 
+    BarColumn,
+    TaskProgressColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+    FileSizeColumn,
+    TotalFileSizeColumn,
+    TransferSpeedColumn,
+    MofNCompleteColumn
+)
 from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
@@ -21,7 +33,7 @@ from . import __version__
 from .analyzer import StreamAnalyzer
 from .comparator import CaptureComparator
 from .models import AnalysisResult, ComparisonReport
-from .parser import PCAPParser, find_pcap_files
+from .parser import PCAPParser, find_pcap_files, ParseProgress
 
 try:
     from .visualization import (
@@ -45,7 +57,7 @@ app = typer.Typer(
     name="llmshark",
     help="🦈 Comprehensive analysis tool for LLM streaming traffic from PCAP files",
     rich_markup_mode="rich",
-    add_completion=False,
+    add_completion=True,
 )
 
 console = Console()
@@ -111,15 +123,10 @@ def analyze(
     ),
 ) -> None:
     """
-    🔍 Analyze LLM streaming traffic from PCAP files.
+    🔬 Analyze LLM streaming traffic from PCAP files.
 
-    This command performs comprehensive analysis of HTTP/SSE streaming sessions,
-    extracting timing statistics, detecting anomalies, and generating insights.
-
-    Examples:
-        llmshark analyze capture.pcap
-        llmshark analyze *.pcap --output-dir ./results --format html
-        llmshark analyze session1.pcap session2.pcap --compare
+    This command parses PCAP files to extract HTTP/SSE streaming sessions,
+    analyzes timing characteristics, and provides comprehensive reports.
     """
     try:
         # Validate input files
@@ -136,14 +143,23 @@ def analyze(
         console.print("[bold blue]🦈 LLMShark Analysis Starting[/bold blue]")
         console.print(f"📁 Analyzing {len(validated_files)} PCAP file(s)")
 
-        sessions = _parse_pcap_files(validated_files, verbose)
+        sessions = _parse_pcap_files_with_progress(validated_files, verbose)
 
         if not sessions:
             console.print(
                 "[yellow]⚠️  No streaming sessions found in PCAP files[/yellow]"
             )
             console.print(
-                "\n[dim]Make sure your PCAP files contain HTTP/SSE streaming traffic.[/dim]"
+                "\n[dim]Possible reasons:[/dim]"
+            )
+            console.print(
+                "[dim]• PCAP files don't contain HTTP/SSE streaming traffic[/dim]"
+            )
+            console.print(
+                "[dim]• Traffic is encrypted (HTTPS) and can't be analyzed[/dim]"
+            )
+            console.print(
+                "[dim]• Streaming format is not recognized (try with different captures)[/dim]"
             )
             raise typer.Exit(0)
 
@@ -166,9 +182,10 @@ def analyze(
 
         # Compare captures if multiple files provided
         comparison_report = None
-        if len(validated_files) > 1 and compare_sessions:
-            comparator = CaptureComparator()
-            # For simplicity, treat each file as a separate capture
+        if compare_sessions and len(validated_files) > 1:
+            console.print("\n[blue]🔄 Comparing captures...[/blue]")
+            
+            # Group sessions by capture file for comparison
             file_results = []
             for pcap_file in validated_files:
                 file_sessions = [s for s in sessions if s.capture_file == pcap_file]
@@ -180,16 +197,19 @@ def analyze(
                     file_results.append(file_result)
 
             if len(file_results) > 1:
+                comparator = CaptureComparator()
                 comparison_report = comparator.compare_captures(file_results)
+                
                 if output_format.lower() in ["console", "all"]:
                     _display_comparison_console(comparison_report, verbose)
 
-        # Save results to files
-        if output_dir and output_format.lower() in ["json", "all"]:
-            _save_json_results(result, comparison_report, output_dir)
-
-        if output_dir and output_format.lower() in ["html", "all"]:
-            _save_html_results(result, comparison_report, output_dir)
+        # Save results
+        if output_dir:
+            if output_format.lower() in ["json", "all"]:
+                _save_json_results(result, comparison_report, output_dir)
+            
+            if output_format.lower() in ["html", "all"]:
+                _save_html_results(result, comparison_report, output_dir)
 
         console.print(
             f"\n[green]✅ Analysis complete! Processed {result.session_count} sessions.[/green]"
@@ -197,7 +217,7 @@ def analyze(
 
     except KeyboardInterrupt:
         console.print("\n[yellow]⚠️  Analysis interrupted by user[/yellow]")
-        raise typer.Exit(1)
+        raise typer.Exit(130)
     except Exception as e:
         console.print(f"\n[red]❌ Error during analysis: {e}[/red]")
         if verbose:
@@ -364,31 +384,92 @@ def _validate_pcap_files(pcap_files: List[Path]) -> List[Path]:
     return validated
 
 
-def _parse_pcap_files(pcap_files: List[Path], verbose: bool) -> List:
-    """Parse PCAP files and extract sessions."""
+def _parse_pcap_files_with_progress(pcap_files: List[Path], verbose: bool) -> List:
+    """Parse PCAP files with detailed progress tracking."""
     parser = PCAPParser()
     all_sessions = []
-
-    with Progress(console=console) as progress:
-        task = progress.add_task("📡 Parsing PCAP files...", total=len(pcap_files))
-
-        for pcap_file in pcap_files:
+    
+    # Create custom progress bar with detailed metrics
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        TextColumn("│"),
+        TransferSpeedColumn(),
+        console=console,
+        expand=True
+    ) as progress:
+        
+        # Global progress for files
+        file_task = progress.add_task(
+            "📡 Processing PCAP files", 
+            total=len(pcap_files)
+        )
+        
+        for file_idx, pcap_file in enumerate(pcap_files):
             try:
-                sessions = parser.parse_file(pcap_file)
+                # Update description for current file
+                progress.update(
+                    file_task, 
+                    description=f"📡 Processing {pcap_file.name}"
+                )
+                
+                # Packet-level progress tracking
+                current_progress = None
+                packet_task = None
+                
+                def progress_callback(parse_progress: ParseProgress):
+                    nonlocal current_progress, packet_task
+                    current_progress = parse_progress
+                    
+                    if packet_task is None:
+                        packet_task = progress.add_task(
+                            "📦 Parsing packets",
+                            total=parse_progress.total_packets
+                        )
+                    
+                    # Update packet progress
+                    progress.update(
+                        packet_task,
+                        completed=parse_progress.processed_packets,
+                        description=(
+                            f"📦 {parse_progress.processed_packets:,}/{parse_progress.total_packets:,} packets "
+                            f"({parse_progress.processed_bytes/1024/1024:.1f} MB) "
+                            f"• {parse_progress.http_packets_found} HTTP "
+                            f"• {parse_progress.sse_streams_found} streams"
+                        )
+                    )
+                
+                # Parse with progress callback
+                sessions = parser.parse_file(pcap_file, progress_callback)
                 all_sessions.extend(sessions)
 
-                if verbose:
+                if verbose and current_progress:
                     console.print(
-                        f"  📁 {pcap_file.name}: {len(sessions)} sessions found"
+                        f"  📁 {pcap_file.name}: "
+                        f"{len(sessions)} sessions, "
+                        f"{current_progress.http_packets_found} HTTP packets, "
+                        f"{current_progress.processed_bytes/1024/1024:.1f} MB processed"
                     )
+                
+                # Remove packet task when done
+                if packet_task is not None:
+                    progress.remove_task(packet_task)
+                    packet_task = None
 
-                progress.update(task, advance=1)
+                progress.update(file_task, advance=1)
 
             except Exception as e:
                 console.print(
                     f"[yellow]⚠️  Error parsing {pcap_file.name}: {e}[/yellow]"
                 )
-                progress.update(task, advance=1)
+                if packet_task is not None:
+                    progress.remove_task(packet_task)
+                    packet_task = None
+                progress.update(file_task, advance=1)
 
     return all_sessions
 
@@ -445,20 +526,24 @@ def _display_analysis_console(result: AnalysisResult, verbose: bool) -> None:
 
     console.print(timing_table)
 
-    # Anomalies
-    anomalies = result.anomalies
-    if anomalies.large_gaps or anomalies.silence_periods or anomalies.unusual_patterns:
-        console.print("\n[bold red]🚨 ANOMALIES DETECTED[/bold red]")
+    # Anomalies (if any)
+    if result.anomalies and (
+        result.anomalies.large_gaps
+        or result.anomalies.silence_periods
+        or result.anomalies.unusual_patterns
+    ):
+        anomaly_table = Table(title="⚠️  Anomalies Detected", show_header=False)
+        anomaly_table.add_column("Type", style="yellow")
+        anomaly_table.add_column("Count", style="red")
 
-        if anomalies.large_gaps:
-            console.print(f"  • {len(anomalies.large_gaps)} large timing gaps")
-        if anomalies.silence_periods:
-            console.print(f"  • {len(anomalies.silence_periods)} silence periods")
-        if anomalies.unusual_patterns:
-            console.print(f"  • {len(anomalies.unusual_patterns)} unusual patterns")
-            if verbose:
-                for pattern in anomalies.unusual_patterns:
-                    console.print(f"    - {pattern}")
+        if result.anomalies.large_gaps:
+            anomaly_table.add_row("Large Timing Gaps", str(len(result.anomalies.large_gaps)))
+        if result.anomalies.silence_periods:
+            anomaly_table.add_row("Silence Periods", str(len(result.anomalies.silence_periods)))
+        if result.anomalies.unusual_patterns:
+            anomaly_table.add_row("Unusual Patterns", str(len(result.anomalies.unusual_patterns)))
+
+        console.print(anomaly_table)
 
     # Key insights
     if result.key_insights:
@@ -472,25 +557,30 @@ def _display_analysis_console(result: AnalysisResult, verbose: bool) -> None:
 
     # Recommendations
     if result.recommendations:
-        rec_text = Text()
+        recommendations_text = Text()
         for rec in result.recommendations:
-            rec_text.append(f"• {rec}\n")
+            recommendations_text.append(f"• {rec}\n")
 
-        console.print(Panel(rec_text, title="🎯 Recommendations", border_style="green"))
+        console.print(
+            Panel(
+                recommendations_text,
+                title="🎯 Recommendations",
+                border_style="green",
+            )
+        )
 
-    # Session details (if verbose)
-    if verbose and result.sessions:
-        console.print("\n[bold]📋 Session Details[/bold]")
-
-        sessions_table = Table()
+    # Session details (if verbose or small number of sessions)
+    if verbose or len(result.sessions) <= 10:
+        sessions_table = Table(title="📋 Session Details")
         sessions_table.add_column("Session ID", style="cyan")
-        sessions_table.add_column("Chunks", justify="right")
-        sessions_table.add_column("Tokens", justify="right")
-        sessions_table.add_column("Duration", justify="right")
-        sessions_table.add_column("TTFT", justify="right")
-        sessions_table.add_column("Mean ITL", justify="right")
+        sessions_table.add_column("Chunks", style="green")
+        sessions_table.add_column("Tokens", style="green")
+        sessions_table.add_column("Duration", style="blue")
+        sessions_table.add_column("TTFT", style="yellow")
+        sessions_table.add_column("Mean ITL", style="magenta")
 
-        for session in result.sessions[:10]:  # Show first 10 sessions
+        sessions_to_show = result.sessions[:10] if not verbose else result.sessions
+        for session in sessions_to_show:
             timing = result.per_session_timing.get(session.session_id)
 
             ttft_str = f"{timing.ttft_ms:.1f}ms" if timing and timing.ttft_ms else "-"
@@ -529,45 +619,36 @@ def _display_comparison_console(report: ComparisonReport, verbose: bool) -> None
     console.print("=" * 60)
 
     if len(report.captures) < 2:
-        console.print("[yellow]⚠️  Need at least 2 captures for comparison[/yellow]")
+        console.print("[yellow]⚠️  Need at least 2 captures to compare[/yellow]")
         return
 
-    # Performance rankings
-    rankings_table = Table(title="🏆 Performance Rankings")
-    rankings_table.add_column("Rank", justify="center")
-    rankings_table.add_column("Capture", style="cyan")
-    rankings_table.add_column("Sessions", justify="right")
-    rankings_table.add_column("Avg TTFT", justify="right")
-    rankings_table.add_column("Avg ITL", justify="right")
-    rankings_table.add_column("Performance Score", justify="right")
+    # Performance comparison table
+    perf_table = Table(title="📊 Performance Comparison")
+    perf_table.add_column("Capture", style="cyan")
+    perf_table.add_column("Sessions", style="green")
+    perf_table.add_column("TTFT (ms)", style="yellow")
+    perf_table.add_column("Mean ITL (ms)", style="magenta")
+    perf_table.add_column("Score", style="blue")
 
-    for i, capture_idx in enumerate(report.performance_rankings):
-        capture = report.captures[capture_idx]
+    for i, capture in enumerate(report.captures):
         timing = capture.overall_timing_stats
+        ttft_str = f"{timing.ttft_ms:.1f}" if timing.ttft_ms else "-"
+        itl_str = f"{timing.mean_itl_ms:.1f}" if timing.mean_itl_ms else "-"
 
-        rank_style = "green" if i == 0 else "yellow" if i == 1 else "red"
-        rank_icon = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "📊"
+        # Calculate simple performance score (lower = better)
+        score = 0.0
+        if timing.ttft_ms and timing.mean_itl_ms:
+            score = timing.ttft_ms + timing.mean_itl_ms
 
-        ttft_str = f"{timing.ttft_ms:.1f}ms" if timing.ttft_ms else "-"
-        itl_str = f"{timing.mean_itl_ms:.1f}ms" if timing.mean_itl_ms else "-"
-
-        # Calculate simple performance score for display
-        score = 0
-        if timing.ttft_ms:
-            score += timing.ttft_ms / 1000
-        if timing.mean_itl_ms:
-            score += timing.mean_itl_ms / 1000
-
-        rankings_table.add_row(
-            f"[{rank_style}]{rank_icon} {i+1}[/{rank_style}]",
-            f"Capture {capture_idx + 1}",
+        perf_table.add_row(
+            f"Capture {i+1}",
             str(capture.session_count),
             ttft_str,
             itl_str,
             f"{score:.3f}" if score > 0 else "-",
         )
 
-    console.print(rankings_table)
+    console.print(perf_table)
 
     # Common patterns
     if report.common_patterns:
@@ -612,7 +693,7 @@ def _display_comparison_console(report: ComparisonReport, verbose: bool) -> None
     # Consistency metrics
     if report.consistency_score is not None:
         consistency_text = Text()
-        consistency_text.append(f"Consistency Score: {report.consistency_score:.3f}\n")
+        consistency_text.append(f"Consistency Score: {report.consistency_score:.2f}\n")
 
         if report.consistency_score > 0.8:
             consistency_text.append(

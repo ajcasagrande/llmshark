@@ -10,7 +10,8 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Callable
+import time
 
 from scapy.all import TCP, IP, Raw, rdpcap
 from scapy.layers.http import HTTP, HTTPRequest, HTTPResponse
@@ -30,12 +31,74 @@ class PCAPParseError(Exception):
     pass
 
 
+class ParseProgress:
+    """Progress tracking for PCAP parsing."""
+    
+    def __init__(self):
+        self.total_packets = 0
+        self.processed_packets = 0
+        self.total_bytes = 0
+        self.processed_bytes = 0
+        self.start_time = time.time()
+        self.http_packets_found = 0
+        self.sse_streams_found = 0
+        
+    def update(self, packet_count: int = 1, bytes_processed: int = 0, http_found: bool = False, sse_found: bool = False):
+        """Update progress counters."""
+        self.processed_packets += packet_count
+        self.processed_bytes += bytes_processed
+        if http_found:
+            self.http_packets_found += 1
+        if sse_found:
+            self.sse_streams_found += 1
+    
+    @property
+    def elapsed_time(self) -> float:
+        """Get elapsed time in seconds."""
+        return time.time() - self.start_time
+    
+    @property
+    def progress_ratio(self) -> float:
+        """Get progress as ratio (0.0 to 1.0)."""
+        if self.total_packets == 0:
+            return 0.0
+        return min(self.processed_packets / self.total_packets, 1.0)
+    
+    @property
+    def eta_seconds(self) -> Optional[float]:
+        """Estimate time remaining in seconds."""
+        if self.progress_ratio <= 0:
+            return None
+        
+        remaining_ratio = 1.0 - self.progress_ratio
+        if remaining_ratio <= 0:
+            return 0.0
+            
+        return (self.elapsed_time / self.progress_ratio) * remaining_ratio
+    
+    @property
+    def packets_per_second(self) -> float:
+        """Get processing rate in packets per second."""
+        if self.elapsed_time <= 0:
+            return 0.0
+        return self.processed_packets / self.elapsed_time
+    
+    @property
+    def mbytes_per_second(self) -> float:
+        """Get processing rate in MB per second."""
+        if self.elapsed_time <= 0:
+            return 0.0
+        return (self.processed_bytes / (1024 * 1024)) / self.elapsed_time
+
+
 class HTTPStreamReassembler:
     """Reassembles HTTP streams from TCP packets."""
 
-    def __init__(self) -> None:
+    def __init__(self, progress_callback: Optional[Callable[[ParseProgress], None]] = None) -> None:
         self.streams: Dict[str, Dict[str, any]] = {}
         self.completed_sessions: List[StreamSession] = []
+        self.progress_callback = progress_callback
+        self.progress = ParseProgress()
 
     def get_stream_key(self, packet: any) -> str:
         """Generate unique key for a TCP stream."""
@@ -90,6 +153,19 @@ class HTTPStreamReassembler:
                 "dst_port": dst_port,
             }
 
+        # Update progress
+        packet_size = len(bytes(packet)) if packet else 0
+        is_http = HTTP in packet
+        self.progress.update(packet_count=1, bytes_processed=packet_size, http_found=is_http)
+        
+        # Call progress callback if provided
+        if self.progress_callback:
+            self.progress_callback(self.progress)
+
+    def set_total_packets(self, total: int) -> None:
+        """Set total packet count for progress tracking."""
+        self.progress.total_packets = total
+
     def process_streams(self) -> List[StreamSession]:
         """Process all collected streams to extract HTTP sessions."""
         sessions = []
@@ -99,6 +175,7 @@ class HTTPStreamReassembler:
                 session = self._process_single_stream(stream_key, stream_data)
                 if session:
                     sessions.append(session)
+                    self.progress.update(sse_found=True)
             except Exception as e:
                 # Log error but continue processing other streams
                 print(f"Error processing stream {stream_key}: {e}")
@@ -153,14 +230,27 @@ class HTTPStreamReassembler:
         request_headers = self._parse_http_headers(http_request)
         response_headers = self._parse_http_headers(http_response)
 
-        # Check if this is an SSE stream
+        # Check if this could be an SSE/streaming response
+        # Accept multiple content types and check for streaming indicators
         content_type = response_headers.content_type or ""
-        if "text/event-stream" not in content_type.lower():
-            # Not an SSE stream, skip
-            return None
+        transfer_encoding = response_headers.transfer_encoding or ""
+        
+        # More permissive check for streaming content
+        is_streaming = (
+            "text/event-stream" in content_type.lower() or
+            "application/json" in content_type.lower() or
+            "chunked" in transfer_encoding.lower() or
+            "stream" in content_type.lower()
+        )
+        
+        if not is_streaming:
+            # Still try to extract data if there are multiple data packets
+            data_packets = [p for p in packets if Raw in p and len(bytes(p[Raw])) > 0]
+            if len(data_packets) < 2:  # Not enough data packets to be streaming
+                return None
 
-        # Extract streaming chunks
-        chunks = self._extract_sse_chunks(
+        # Extract streaming chunks with improved detection
+        chunks = self._extract_streaming_chunks(
             packets, timestamps, stream_data["direction_map"]
         )
 
@@ -245,35 +335,65 @@ class HTTPStreamReassembler:
 
         return version_map.get(version, ProtocolVersion.HTTP_1_1)
 
-    def _extract_sse_chunks(
+    def _extract_streaming_chunks(
         self, packets: List[any], timestamps: List[datetime], direction_map: Dict
     ) -> List[StreamChunk]:
-        """Extract SSE chunks from HTTP response packets."""
+        """Extract streaming chunks from HTTP response packets with improved detection."""
         chunks = []
         chunk_buffer = b""
         sequence_number = 0
-
+        
+        # Find all server-to-client data packets
+        data_packets = []
         for i, packet in enumerate(packets):
             if Raw in packet and TCP in packet:
-                # Check if this is server-to-client data
                 seq = packet[TCP].seq
                 direction_info = direction_map.get(seq, {})
 
                 if direction_info.get("direction") == "server_to_client":
                     payload = bytes(packet[Raw])
-                    chunk_buffer += payload
+                    if len(payload) > 0:  # Only include packets with actual data
+                        data_packets.append((i, packet, payload, timestamps[i]))
 
-                    # Try to parse SSE chunks from buffer
-                    new_chunks = self._parse_sse_buffer(
-                        chunk_buffer, timestamps[i], sequence_number
-                    )
-                    chunks.extend(new_chunks)
-                    sequence_number += len(new_chunks)
+        if len(data_packets) < 1:
+            return []
 
-                    # Keep remaining unparsed data in buffer
-                    if new_chunks:
-                        # Remove parsed data from buffer (simplified)
-                        chunk_buffer = b""
+        # Process each data packet
+        for packet_idx, packet, payload, timestamp in data_packets:
+            chunk_buffer += payload
+
+            # Try multiple parsing strategies
+            new_chunks = []
+            
+            # Strategy 1: SSE format (data: ...)
+            sse_chunks = self._parse_sse_buffer(chunk_buffer, timestamp, sequence_number)
+            if sse_chunks:
+                new_chunks.extend(sse_chunks)
+                
+            # Strategy 2: JSON streaming (each line is JSON)
+            if not new_chunks:
+                json_chunks = self._parse_json_stream_buffer(chunk_buffer, timestamp, sequence_number)
+                if json_chunks:
+                    new_chunks.extend(json_chunks)
+            
+            # Strategy 3: Chunked HTTP data
+            if not new_chunks:
+                chunked_data = self._parse_chunked_buffer(chunk_buffer, timestamp, sequence_number)
+                if chunked_data:
+                    new_chunks.extend(chunked_data)
+            
+            # Strategy 4: Fallback - treat each packet as a chunk
+            if not new_chunks and len(payload) > 10:  # Minimum size to be meaningful
+                fallback_chunk = self._create_fallback_chunk(payload, timestamp, sequence_number)
+                if fallback_chunk:
+                    new_chunks.append(fallback_chunk)
+
+            if new_chunks:
+                chunks.extend(new_chunks)
+                sequence_number += len(new_chunks)
+                # Keep some buffer for potential multi-packet chunks
+                if len(chunk_buffer) > 8192:  # Reset if buffer gets too large
+                    chunk_buffer = b""
 
         # Mark first and last chunks
         if chunks:
@@ -292,11 +412,19 @@ class HTTPStreamReassembler:
             # Decode buffer
             text = buffer.decode("utf-8", errors="ignore")
 
-            # Split by SSE chunk boundaries
-            sse_pattern = r"data:\s*(.+?)(?=\n\n|\r\n\r\n|$)"
-            matches = re.findall(sse_pattern, text, re.DOTALL)
+            # More comprehensive SSE patterns
+            patterns = [
+                r"data:\s*(.+?)(?=\n\n|\r\n\r\n|$)",  # Standard SSE
+                r"data:\s*(.+?)(?=\ndata:|\n\n|\r\n\r\n|$)",  # Multiple data lines
+                r"event:\s*\w+\ndata:\s*(.+?)(?=\n\n|\r\n\r\n|$)",  # With event type
+            ]
+            
+            all_matches = []
+            for pattern in patterns:
+                matches = re.findall(pattern, text, re.DOTALL | re.MULTILINE)
+                all_matches.extend(matches)
 
-            for i, match in enumerate(matches):
+            for i, match in enumerate(all_matches):
                 content = match.strip()
                 if content and content != "[DONE]":  # Skip SSE termination marker
                     try:
@@ -318,18 +446,98 @@ class HTTPStreamReassembler:
                     chunks.append(chunk)
 
         except Exception as e:
-            # If parsing fails, create a single chunk with raw data
-            if buffer:
-                chunk = StreamChunk(
-                    timestamp=timestamp,
-                    sequence_number=start_sequence,
-                    size_bytes=len(buffer),
-                    content=buffer.decode("utf-8", errors="ignore"),
-                    parse_errors=[str(e)],
-                )
-                chunks.append(chunk)
+            # If parsing fails, don't create fallback chunks here
+            pass
 
         return chunks
+    
+    def _parse_json_stream_buffer(
+        self, buffer: bytes, timestamp: datetime, start_sequence: int
+    ) -> List[StreamChunk]:
+        """Parse JSON streaming data (newline-delimited JSON)."""
+        chunks = []
+        
+        try:
+            text = buffer.decode("utf-8", errors="ignore")
+            
+            # Split by newlines and try to parse each line as JSON
+            lines = text.split('\n')
+            
+            for i, line in enumerate(lines):
+                line = line.strip()
+                if line and len(line) > 2:  # Minimum length for valid JSON
+                    try:
+                        # Try to parse as JSON
+                        json.loads(line)
+                        chunk = StreamChunk(
+                            timestamp=timestamp,
+                            sequence_number=start_sequence + i,
+                            size_bytes=len(line.encode("utf-8")),
+                            content=line,
+                            event_type=None,
+                            event_id=None,
+                        )
+                        chunks.append(chunk)
+                    except json.JSONDecodeError:
+                        continue
+                        
+        except Exception:
+            pass
+            
+        return chunks
+    
+    def _parse_chunked_buffer(
+        self, buffer: bytes, timestamp: datetime, start_sequence: int
+    ) -> List[StreamChunk]:
+        """Parse HTTP chunked transfer encoding."""
+        chunks = []
+        
+        try:
+            text = buffer.decode("utf-8", errors="ignore")
+            
+            # Look for chunked encoding pattern: size\r\ndata\r\n
+            chunk_pattern = r"([0-9a-fA-F]+)\r?\n(.+?)(?=\r?\n[0-9a-fA-F]+|\r?\n0\r?\n|$)"
+            matches = re.findall(chunk_pattern, text, re.DOTALL)
+            
+            for i, (size_hex, data) in enumerate(matches):
+                try:
+                    expected_size = int(size_hex, 16)
+                    if expected_size > 0 and len(data.encode('utf-8')) >= expected_size // 2:  # Rough size check
+                        chunk = StreamChunk(
+                            timestamp=timestamp,
+                            sequence_number=start_sequence + i,
+                            size_bytes=len(data.encode("utf-8")),
+                            content=data.strip(),
+                            event_type=None,
+                            event_id=None,
+                        )
+                        chunks.append(chunk)
+                except ValueError:
+                    continue
+                    
+        except Exception:
+            pass
+            
+        return chunks
+    
+    def _create_fallback_chunk(
+        self, payload: bytes, timestamp: datetime, sequence_number: int
+    ) -> Optional[StreamChunk]:
+        """Create a fallback chunk from raw payload."""
+        try:
+            content = payload.decode("utf-8", errors="ignore").strip()
+            if len(content) > 0:
+                return StreamChunk(
+                    timestamp=timestamp,
+                    sequence_number=sequence_number,
+                    size_bytes=len(payload),
+                    content=content,
+                    event_type=None,
+                    event_id=None,
+                )
+        except Exception:
+            pass
+        return None
 
 
 class PCAPParser:
@@ -339,8 +547,8 @@ class PCAPParser:
         self.sessions: List[StreamSession] = []
         self.parse_errors: List[str] = []
 
-    def parse_file(self, pcap_file: Path) -> List[StreamSession]:
-        """Parse a single PCAP file."""
+    def parse_file(self, pcap_file: Path, progress_callback: Optional[Callable[[ParseProgress], None]] = None) -> List[StreamSession]:
+        """Parse a single PCAP file with optional progress callback."""
         if not pcap_file.exists():
             raise PCAPParseError(f"PCAP file does not exist: {pcap_file}")
 
@@ -352,7 +560,8 @@ class PCAPParser:
                 raise PCAPParseError(f"No packets found in PCAP file: {pcap_file}")
 
             # Use stream reassembler to process packets
-            reassembler = HTTPStreamReassembler()
+            reassembler = HTTPStreamReassembler(progress_callback)
+            reassembler.set_total_packets(len(packets))
 
             for packet in packets:
                 # Convert scapy timestamp to datetime
@@ -373,13 +582,13 @@ class PCAPParser:
             self.parse_errors.append(error_msg)
             raise PCAPParseError(error_msg) from e
 
-    def parse_files(self, pcap_files: List[Path]) -> List[StreamSession]:
-        """Parse multiple PCAP files."""
+    def parse_files(self, pcap_files: List[Path], progress_callback: Optional[Callable[[ParseProgress], None]] = None) -> List[StreamSession]:
+        """Parse multiple PCAP files with optional progress callback."""
         all_sessions = []
 
         for pcap_file in pcap_files:
             try:
-                sessions = self.parse_file(pcap_file)
+                sessions = self.parse_file(pcap_file, progress_callback)
                 all_sessions.extend(sessions)
             except PCAPParseError as e:
                 print(f"Warning: {e}")
