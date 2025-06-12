@@ -5,25 +5,23 @@ This module provides functionality to create charts, graphs, and HTML reports
 for analysis results and comparisons.
 """
 
-import json
 from pathlib import Path
-from typing import List, Optional
 
 try:
     import matplotlib.pyplot as plt
-    import seaborn as sns
-    import plotly.graph_objects as go
     import plotly.express as px
+    import plotly.graph_objects as go
+    import seaborn as sns
     from plotly.subplots import make_subplots
 
     PLOTTING_AVAILABLE = True
 except ImportError:
     PLOTTING_AVAILABLE = False
 
-from .models import AnalysisResult, ComparisonReport, TimingStats
+from .models import AnalysisResult, ComparisonReport
 
 
-def create_timing_charts(result: AnalysisResult, output_dir: Path) -> List[Path]:
+def create_timing_charts(result: AnalysisResult, output_dir: Path) -> list[Path]:
     """Create timing charts for analysis results."""
     if not PLOTTING_AVAILABLE:
         raise ImportError(
@@ -56,7 +54,7 @@ def create_timing_charts(result: AnalysisResult, output_dir: Path) -> List[Path]
     return chart_files
 
 
-def create_comparison_charts(report: ComparisonReport, output_dir: Path) -> List[Path]:
+def create_comparison_charts(report: ComparisonReport, output_dir: Path) -> list[Path]:
     """Create comparison charts for multiple captures."""
     if not PLOTTING_AVAILABLE:
         raise ImportError(
@@ -83,7 +81,7 @@ def create_comparison_charts(report: ComparisonReport, output_dir: Path) -> List
 
 
 def save_html_report(
-    result: AnalysisResult, comparison: Optional[ComparisonReport], output_file: Path
+    result: AnalysisResult, comparison: ComparisonReport | None, output_file: Path
 ) -> None:
     """Save a comprehensive HTML report."""
     html_content = _generate_html_report(result, comparison)
@@ -92,7 +90,7 @@ def save_html_report(
         f.write(html_content)
 
 
-def _create_itl_distribution_chart(result: AnalysisResult) -> Optional[go.Figure]:
+def _create_itl_distribution_chart(result: AnalysisResult) -> go.Figure | None:
     """Create ITL distribution chart."""
     if not result.overall_timing_stats.itl_values_ms:
         return None
@@ -140,7 +138,7 @@ def _create_itl_distribution_chart(result: AnalysisResult) -> Optional[go.Figure
     return fig
 
 
-def _create_ttft_comparison_chart(result: AnalysisResult) -> Optional[go.Figure]:
+def _create_ttft_comparison_chart(result: AnalysisResult) -> go.Figure | None:
     """Create TTFT comparison chart across sessions."""
     if not result.per_session_timing:
         return None
@@ -183,7 +181,7 @@ def _create_ttft_comparison_chart(result: AnalysisResult) -> Optional[go.Figure]
     return fig
 
 
-def _create_timeline_chart(result: AnalysisResult) -> Optional[go.Figure]:
+def _create_timeline_chart(result: AnalysisResult) -> go.Figure | None:
     """Create timeline chart showing chunk arrivals."""
     if not result.sessions or not result.sessions[0].chunks:
         return None
@@ -222,7 +220,7 @@ def _create_timeline_chart(result: AnalysisResult) -> Optional[go.Figure]:
 
 def _create_performance_comparison_chart(
     report: ComparisonReport,
-) -> Optional[go.Figure]:
+) -> go.Figure | None:
     """Create performance comparison chart."""
     if len(report.captures) < 2:
         return None
@@ -269,7 +267,7 @@ def _create_performance_comparison_chart(
     return fig
 
 
-def _create_consistency_chart(report: ComparisonReport) -> Optional[go.Figure]:
+def _create_consistency_chart(report: ComparisonReport) -> go.Figure | None:
     """Create consistency analysis chart."""
     if len(report.captures) < 2:
         return None
@@ -317,7 +315,7 @@ def _create_consistency_chart(report: ComparisonReport) -> Optional[go.Figure]:
 
 
 def _generate_html_report(
-    result: AnalysisResult, comparison: Optional[ComparisonReport]
+    result: AnalysisResult, comparison: ComparisonReport | None
 ) -> str:
     """Generate comprehensive HTML report."""
 

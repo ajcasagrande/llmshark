@@ -5,10 +5,8 @@ This module performs comprehensive analysis of HTTP/SSE streaming sessions,
 calculating timing statistics, detecting anomalies, and generating insights.
 """
 
-import json
 import statistics
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
 
 import numpy as np
 from scipy import stats
@@ -25,13 +23,13 @@ class StreamAnalyzer:
     """Main analyzer for streaming sessions."""
 
     def __init__(self) -> None:
-        self.analysis_start_time: Optional[datetime] = None
+        self.analysis_start_time: datetime | None = None
         self.anomaly_threshold_std = 3.0
         self.gap_threshold_ms = 5000.0
         self.silence_threshold_ms = 2000.0
 
     def analyze_sessions(
-        self, sessions: List[StreamSession], detect_anomalies: bool = True
+        self, sessions: list[StreamSession], detect_anomalies: bool = True
     ) -> AnalysisResult:
         """Perform comprehensive analysis of streaming sessions."""
         self.analysis_start_time = datetime.now()
@@ -173,7 +171,7 @@ class StreamAnalyzer:
         return timing_stats
 
     def _calculate_overall_timing(
-        self, sessions: List[StreamSession], per_session_timing: Dict[str, TimingStats]
+        self, sessions: list[StreamSession], per_session_timing: dict[str, TimingStats]
     ) -> TimingStats:
         """Calculate aggregate timing statistics across all sessions."""
         overall_stats = TimingStats()
@@ -242,7 +240,7 @@ class StreamAnalyzer:
         return overall_stats
 
     def _detect_anomalies(
-        self, sessions: List[StreamSession], per_session_timing: Dict[str, TimingStats]
+        self, sessions: list[StreamSession], per_session_timing: dict[str, TimingStats]
     ) -> AnomalyDetection:
         """Detect anomalies in streaming sessions."""
         anomalies = AnomalyDetection(
@@ -283,7 +281,7 @@ class StreamAnalyzer:
 
         return anomalies
 
-    def _detect_large_gaps(self, session: StreamSession) -> List[Dict[str, any]]:
+    def _detect_large_gaps(self, session: StreamSession) -> list[dict[str, any]]:
         """Detect large gaps between chunks in a session."""
         large_gaps = []
 
@@ -311,7 +309,7 @@ class StreamAnalyzer:
 
         return large_gaps
 
-    def _detect_statistical_outliers(self, values: List[float]) -> List[int]:
+    def _detect_statistical_outliers(self, values: list[float]) -> list[int]:
         """Detect statistical outliers using Z-score method."""
         if len(values) < 10:
             return []
@@ -321,7 +319,7 @@ class StreamAnalyzer:
 
         return outlier_indices.tolist()
 
-    def _detect_silence_periods(self, session: StreamSession) -> List[Dict[str, any]]:
+    def _detect_silence_periods(self, session: StreamSession) -> list[dict[str, any]]:
         """Detect periods of silence (no chunks) in a session."""
         silence_periods = []
 
@@ -351,8 +349,8 @@ class StreamAnalyzer:
         return silence_periods
 
     def _detect_unusual_patterns(
-        self, sessions: List[StreamSession], per_session_timing: Dict[str, TimingStats]
-    ) -> List[str]:
+        self, sessions: list[StreamSession], per_session_timing: dict[str, TimingStats]
+    ) -> list[str]:
         """Detect unusual patterns in the streaming data."""
         patterns = []
 
@@ -401,7 +399,7 @@ class StreamAnalyzer:
 
         return patterns
 
-    def _find_peaks(self, data: np.ndarray, min_height: float = 0.1) -> List[int]:
+    def _find_peaks(self, data: np.ndarray, min_height: float = 0.1) -> list[int]:
         """Simple peak detection in histogram data."""
         peaks = []
 
@@ -416,7 +414,7 @@ class StreamAnalyzer:
         return peaks
 
     def _has_periodic_pattern(
-        self, intervals: List[float], threshold: float = 0.3
+        self, intervals: list[float], threshold: float = 0.3
     ) -> bool:
         """Check if intervals show periodic pattern using simple autocorrelation."""
         if len(intervals) < 10:
@@ -439,8 +437,8 @@ class StreamAnalyzer:
         return False
 
     def _rank_sessions(
-        self, sessions: List[StreamSession], per_session_timing: Dict[str, TimingStats]
-    ) -> Tuple[Optional[str], Optional[str]]:
+        self, sessions: list[StreamSession], per_session_timing: dict[str, TimingStats]
+    ) -> tuple[str | None, str | None]:
         """Rank sessions by performance."""
         if not sessions:
             return None, None
@@ -481,10 +479,10 @@ class StreamAnalyzer:
 
     def _generate_insights(
         self,
-        sessions: List[StreamSession],
-        per_session_timing: Dict[str, TimingStats],
+        sessions: list[StreamSession],
+        per_session_timing: dict[str, TimingStats],
         anomalies: AnomalyDetection,
-    ) -> List[str]:
+    ) -> list[str]:
         """Generate key insights from the analysis."""
         insights = []
 
@@ -553,10 +551,10 @@ class StreamAnalyzer:
 
     def _generate_recommendations(
         self,
-        sessions: List[StreamSession],
-        per_session_timing: Dict[str, TimingStats],
+        sessions: list[StreamSession],
+        per_session_timing: dict[str, TimingStats],
         anomalies: AnomalyDetection,
-    ) -> List[str]:
+    ) -> list[str]:
         """Generate recommendations based on analysis."""
         recommendations = []
 

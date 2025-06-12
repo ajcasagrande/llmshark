@@ -6,9 +6,7 @@ captures, identify performance differences, and generate comprehensive reports.
 """
 
 import statistics
-from typing import Dict, List, Optional, Tuple
 
-import numpy as np
 from scipy import stats
 
 from .models import (
@@ -27,7 +25,7 @@ class CaptureComparator:
             0.05  # p-value threshold for statistical significance
         )
 
-    def compare_captures(self, results: List[AnalysisResult]) -> ComparisonReport:
+    def compare_captures(self, results: list[AnalysisResult]) -> ComparisonReport:
         """Compare multiple capture analysis results."""
         if len(results) < 2:
             return self._create_single_capture_report(results)
@@ -123,7 +121,7 @@ class CaptureComparator:
         return comparison
 
     def _create_single_capture_report(
-        self, results: List[AnalysisResult]
+        self, results: list[AnalysisResult]
     ) -> ComparisonReport:
         """Create report for single capture (no comparison possible)."""
         return ComparisonReport(
@@ -136,7 +134,7 @@ class CaptureComparator:
             ],
         )
 
-    def _rank_captures_by_performance(self, results: List[AnalysisResult]) -> List[int]:
+    def _rank_captures_by_performance(self, results: list[AnalysisResult]) -> list[int]:
         """Rank captures by overall performance."""
         capture_scores = []
 
@@ -181,7 +179,7 @@ class CaptureComparator:
 
         return score
 
-    def _find_common_patterns(self, results: List[AnalysisResult]) -> List[str]:
+    def _find_common_patterns(self, results: list[AnalysisResult]) -> list[str]:
         """Find patterns common across multiple captures."""
         common_patterns = []
 
@@ -256,8 +254,8 @@ class CaptureComparator:
         return common_patterns
 
     def _find_unique_patterns(
-        self, results: List[AnalysisResult]
-    ) -> Dict[int, List[str]]:
+        self, results: list[AnalysisResult]
+    ) -> dict[int, list[str]]:
         """Find patterns unique to specific captures."""
         unique_patterns = {}
 
@@ -345,8 +343,8 @@ class CaptureComparator:
         return unique_patterns
 
     def _identify_improvement_opportunities(
-        self, results: List[AnalysisResult]
-    ) -> List[str]:
+        self, results: list[AnalysisResult]
+    ) -> list[str]:
         """Identify opportunities for improvement across captures."""
         opportunities = []
 
@@ -436,8 +434,8 @@ class CaptureComparator:
         return opportunities
 
     def _calculate_performance_variance(
-        self, results: List[AnalysisResult]
-    ) -> Optional[float]:
+        self, results: list[AnalysisResult]
+    ) -> float | None:
         """Calculate variance in performance across captures."""
         scores = []
 
@@ -452,8 +450,8 @@ class CaptureComparator:
         return None
 
     def _calculate_consistency_score(
-        self, results: List[AnalysisResult]
-    ) -> Optional[float]:
+        self, results: list[AnalysisResult]
+    ) -> float | None:
         """Calculate consistency score (0-1, higher is more consistent)."""
         if len(results) < 2:
             return 1.0  # Single capture is perfectly consistent with itself
@@ -482,7 +480,7 @@ class CaptureComparator:
 
     def _determine_better_session(
         self, timing_a: TimingStats, timing_b: TimingStats
-    ) -> Optional[str]:
+    ) -> str | None:
         """Determine which session performed better."""
         score_a = 0.0
         score_b = 0.0
@@ -541,7 +539,7 @@ class CaptureComparator:
 
     def _compare_session_patterns(
         self, timing_a: TimingStats, timing_b: TimingStats
-    ) -> List[str]:
+    ) -> list[str]:
         """Compare patterns between two sessions."""
         differences = []
 
@@ -607,8 +605,8 @@ class CaptureComparator:
         self,
         timing_a: TimingStats,
         timing_b: TimingStats,
-        better_session: Optional[str],
-    ) -> List[str]:
+        better_session: str | None,
+    ) -> list[str]:
         """Generate improvement suggestions based on session comparison."""
         suggestions = []
 

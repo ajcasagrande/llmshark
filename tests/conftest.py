@@ -2,10 +2,9 @@
 Pytest configuration and shared fixtures for LLMShark tests.
 """
 
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List
-import tempfile
 
 import pytest
 
@@ -38,7 +37,7 @@ def sample_http_headers() -> HTTPHeaders:
 
 
 @pytest.fixture
-def sample_stream_chunks() -> List[StreamChunk]:
+def sample_stream_chunks() -> list[StreamChunk]:
     """Sample stream chunks for testing."""
     base_time = datetime.now()
     chunks = []
@@ -60,7 +59,7 @@ def sample_stream_chunks() -> List[StreamChunk]:
 
 @pytest.fixture
 def sample_stream_session(
-    sample_http_headers: HTTPHeaders, sample_stream_chunks: List[StreamChunk]
+    sample_http_headers: HTTPHeaders, sample_stream_chunks: list[StreamChunk]
 ) -> StreamSession:
     """Sample stream session for testing."""
     base_time = datetime.now()
@@ -136,7 +135,7 @@ def temp_output_dir() -> Path:
 
 
 @pytest.fixture
-def multiple_sessions(sample_http_headers: HTTPHeaders) -> List[StreamSession]:
+def multiple_sessions(sample_http_headers: HTTPHeaders) -> list[StreamSession]:
     """Multiple stream sessions for comparison testing."""
     sessions = []
     base_time = datetime.now()

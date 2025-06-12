@@ -7,43 +7,39 @@ traffic from PCAP files with comprehensive reporting and visualization.
 
 import json
 from pathlib import Path
-from typing import List, Optional
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
-    Progress, 
-    SpinnerColumn, 
-    TextColumn, 
     BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
     TaskProgressColumn,
+    TextColumn,
     TimeElapsedColumn,
     TimeRemainingColumn,
-    FileSizeColumn,
-    TotalFileSizeColumn,
     TransferSpeedColumn,
-    MofNCompleteColumn
 )
 from rich.table import Table
 from rich.text import Text
-from rich.tree import Tree
 
 from . import __version__
 from .analyzer import StreamAnalyzer
 from .comparator import CaptureComparator
 from .models import AnalysisResult, ComparisonReport
-from .parser import PCAPParser, find_pcap_files, ParseProgress
+from .parser import ParseProgress, PCAPParser, find_pcap_files
 
 try:
+    from .advanced_visualization import AdvancedVisualizer
+    from .dashboard_app import launch_dashboard
+    from .streamlit_dashboard import StreamlitDashboard
     from .visualization import (
-        create_timing_charts,
         create_comparison_charts,
+        create_timing_charts,
         save_html_report,
     )
-    from .advanced_visualization import AdvancedVisualizer
-    from .streamlit_dashboard import StreamlitDashboard
-    from .dashboard_app import launch_dashboard
     VIZ_AVAILABLE = True
 except ImportError:
     # Visualization dependencies not available
@@ -55,7 +51,7 @@ except ImportError:
 
     def save_html_report(*args, **kwargs):
         pass
-    
+
     VIZ_AVAILABLE = False
 
 
@@ -80,7 +76,7 @@ def version_callback(value: bool) -> None:
 
 @app.command()
 def analyze(
-    pcap_files: List[Path] = typer.Argument(
+    pcap_files: list[Path] = typer.Argument(
         ...,
         help="One or more PCAP files to analyze",
         exists=True,
@@ -88,7 +84,7 @@ def analyze(
         dir_okay=False,
         readable=True,
     ),
-    output_dir: Optional[Path] = typer.Option(
+    output_dir: Path | None = typer.Option(
         None,
         "--output-dir",
         "-o",
@@ -120,7 +116,7 @@ def analyze(
         "-v",
         help="Enable verbose output",
     ),
-    version: Optional[bool] = typer.Option(
+    version: bool | None = typer.Option(
         None,
         "--version",
         callback=version_callback,
@@ -190,7 +186,7 @@ def analyze(
         comparison_report = None
         if compare_sessions and len(validated_files) > 1:
             console.print("\n[blue]🔄 Comparing captures...[/blue]")
-            
+
             # Group sessions by capture file for comparison
             file_results = []
             for pcap_file in validated_files:
@@ -205,7 +201,7 @@ def analyze(
             if len(file_results) > 1:
                 comparator = CaptureComparator()
                 comparison_report = comparator.compare_captures(file_results)
-                
+
                 if output_format.lower() in ["console", "all"]:
                     _display_comparison_console(comparison_report, verbose)
 
@@ -213,7 +209,7 @@ def analyze(
         if output_dir:
             if output_format.lower() in ["json", "all"]:
                 _save_json_results(result, comparison_report, output_dir)
-            
+
             if output_format.lower() in ["html", "all"]:
                 _save_html_results(result, comparison_report, output_dir)
 
@@ -233,7 +229,7 @@ def analyze(
 
 @app.command()
 def info(
-    pcap_files: List[Path] = typer.Argument(
+    pcap_files: list[Path] = typer.Argument(
         ...,
         help="PCAP files to inspect",
         exists=True,
@@ -282,7 +278,7 @@ def info(
 
 @app.command()
 def dashboard(
-    pcap_files: List[Path] = typer.Argument(
+    pcap_files: list[Path] = typer.Argument(
         ...,
         help="One or more PCAP files to analyze",
         exists=True,
@@ -360,7 +356,7 @@ def dashboard(
 
         # Launch dashboard
         console.print(f"\n[green]🚀 Launching {dashboard_type.title()} dashboard on port {port}[/green]")
-        
+
         if auto_open:
             import webbrowser
             webbrowser.open(f"http://localhost:{port}")
@@ -380,7 +376,7 @@ def dashboard(
 
 @app.command()
 def visualize(
-    pcap_files: List[Path] = typer.Argument(
+    pcap_files: list[Path] = typer.Argument(
         ...,
         help="One or more PCAP files to analyze",
         exists=True,
@@ -456,13 +452,13 @@ def visualize(
 
         # Generate visualizations
         visualizer = AdvancedVisualizer()
-        
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             console=console,
         ) as progress:
-            
+
             if viz_type.lower() in ["all", "dashboard"]:
                 task = progress.add_task("🎨 Creating interactive dashboard...", total=None)
                 dashboard_path = visualizer.create_interactive_dashboard(result, output_dir)
@@ -473,14 +469,14 @@ def visualize(
                 task = progress.add_task("📈 Generating performance charts...", total=None)
                 perf_charts = create_timing_charts(result, output_dir)
                 progress.update(task, description="✅ Performance charts complete")
-                
-            if viz_type.lower() in ["all", "timeline"]:  
-                task = progress.add_task("🕒 Creating timeline analysis...", total=None) 
+
+            if viz_type.lower() in ["all", "timeline"]:
+                task = progress.add_task("🕒 Creating timeline analysis...", total=None)
                 # Additional timeline visualizations would go here
                 progress.update(task, description="✅ Timeline analysis complete")
 
         console.print(f"\n[green]✅ Visualizations saved to: {output_dir}[/green]")
-        
+
         # Display summary
         files_created = list(output_dir.glob("*.html")) + list(output_dir.glob("*.png"))
         if files_created:
@@ -589,7 +585,7 @@ def batch(
     )
 
 
-def _validate_pcap_files(pcap_files: List[Path]) -> List[Path]:
+def _validate_pcap_files(pcap_files: list[Path]) -> list[Path]:
     """Validate that files are readable PCAP files."""
     validated = []
     parser = PCAPParser()
@@ -605,11 +601,11 @@ def _validate_pcap_files(pcap_files: List[Path]) -> List[Path]:
     return validated
 
 
-def _parse_pcap_files_with_progress(pcap_files: List[Path], verbose: bool) -> List:
+def _parse_pcap_files_with_progress(pcap_files: list[Path], verbose: bool) -> list:
     """Parse PCAP files with detailed progress tracking."""
     parser = PCAPParser()
     all_sessions = []
-    
+
     # Create custom progress bar with detailed metrics
     with Progress(
         TextColumn("[progress.description]{task.description}"),
@@ -623,35 +619,35 @@ def _parse_pcap_files_with_progress(pcap_files: List[Path], verbose: bool) -> Li
         console=console,
         expand=True
     ) as progress:
-        
+
         # Global progress for files
         file_task = progress.add_task(
-            "📡 Processing PCAP files", 
+            "📡 Processing PCAP files",
             total=len(pcap_files)
         )
-        
+
         for file_idx, pcap_file in enumerate(pcap_files):
             try:
                 # Update description for current file
                 progress.update(
-                    file_task, 
+                    file_task,
                     description=f"📡 Processing {pcap_file.name}"
                 )
-                
+
                 # Packet-level progress tracking
                 current_progress = None
                 packet_task = None
-                
+
                 def progress_callback(parse_progress: ParseProgress):
                     nonlocal current_progress, packet_task
                     current_progress = parse_progress
-                    
+
                     if packet_task is None:
                         packet_task = progress.add_task(
                             "📦 Parsing packets",
                             total=parse_progress.total_packets
                         )
-                    
+
                     # Update packet progress
                     progress.update(
                         packet_task,
@@ -663,7 +659,7 @@ def _parse_pcap_files_with_progress(pcap_files: List[Path], verbose: bool) -> Li
                             f"• {parse_progress.sse_streams_found} streams"
                         )
                     )
-                
+
                 # Parse with progress callback
                 sessions = parser.parse_file(pcap_file, progress_callback)
                 all_sessions.extend(sessions)
@@ -675,7 +671,7 @@ def _parse_pcap_files_with_progress(pcap_files: List[Path], verbose: bool) -> Li
                         f"{current_progress.http_packets_found} HTTP packets, "
                         f"{current_progress.processed_bytes/1024/1024:.1f} MB processed"
                     )
-                
+
                 # Remove packet task when done
                 if packet_task is not None:
                     progress.remove_task(packet_task)
@@ -935,8 +931,8 @@ def _display_comparison_console(report: ComparisonReport, verbose: bool) -> None
 
 
 def _save_json_results(
-    result: Optional[AnalysisResult],
-    comparison: Optional[ComparisonReport],
+    result: AnalysisResult | None,
+    comparison: ComparisonReport | None,
     output_dir: Path,
 ) -> None:
     """Save results to JSON files."""
@@ -954,8 +950,8 @@ def _save_json_results(
 
 
 def _save_html_results(
-    result: Optional[AnalysisResult],
-    comparison: Optional[ComparisonReport],
+    result: AnalysisResult | None,
+    comparison: ComparisonReport | None,
     output_dir: Path,
 ) -> None:
     """Save results to HTML files."""

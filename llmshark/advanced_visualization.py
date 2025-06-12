@@ -7,32 +7,28 @@ comprehensive analysis of LLM streaming performance data.
 
 from __future__ import annotations
 
-import json
 import statistics
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
 from plotly.subplots import make_subplots
 from sklearn.cluster import DBSCAN
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-import networkx as nx
 
-from .models import AnalysisResult, ComparisonReport, StreamSession, TimingStats
+from .models import AnalysisResult
 
 
 class AdvancedVisualizer:
     """Advanced visualization engine with state-of-the-art components."""
-    
+
     def __init__(self):
         self.color_palette = {
             'primary': '#667eea',
-            'secondary': '#764ba2', 
+            'secondary': '#764ba2',
             'accent': '#f093fb',
             'success': '#4ecdc4',
             'warning': '#ffd93d',
@@ -41,14 +37,14 @@ class AdvancedVisualizer:
             'light': '#f8f9fa',
             'dark': '#2d3436'
         }
-        
+
     def create_interactive_dashboard(
-        self, 
-        result: AnalysisResult, 
+        self,
+        result: AnalysisResult,
         output_dir: Path
     ) -> Path:
         """Create comprehensive interactive dashboard."""
-        
+
         # Create dashboard components
         performance_fig = self._create_performance_overview(result)
         timeline_fig = self._create_advanced_timeline(result)
@@ -56,7 +52,7 @@ class AdvancedVisualizer:
         anomaly_fig = self._create_anomaly_detection_viz(result)
         correlation_fig = self._create_correlation_matrix(result)
         clustering_fig = self._create_performance_clustering(result)
-        
+
         # Create dashboard HTML
         dashboard_html = self._create_dashboard_html([
             ('Performance Overview', performance_fig),
@@ -66,16 +62,16 @@ class AdvancedVisualizer:
             ('Correlation Analysis', correlation_fig),
             ('Performance Clustering', clustering_fig)
         ])
-        
+
         dashboard_path = output_dir / "advanced_dashboard.html"
         with open(dashboard_path, 'w', encoding='utf-8') as f:
             f.write(dashboard_html)
-            
+
         return dashboard_path
-        
+
     def _create_performance_overview(self, result: AnalysisResult) -> go.Figure:
         """Create comprehensive performance overview with KPIs."""
-        
+
         # Create subplot structure
         fig = make_subplots(
             rows=2, cols=3,
@@ -88,7 +84,7 @@ class AdvancedVisualizer:
                 [{"type": "box"}, {"type": "indicator"}, {"type": "bar"}]
             ]
         )
-        
+
         # TTFT Distribution (Top Left)
         ttft_values = [
             timing.ttft_ms for timing in result.per_session_timing.values()
@@ -104,14 +100,14 @@ class AdvancedVisualizer:
                 ),
                 row=1, col=1
             )
-        
+
         # ITL Trends (Top Middle)
         for i, session in enumerate(result.sessions[:5]):  # Top 5 sessions
             if session.chunks:
-                timestamps = [(chunk.timestamp - session.chunks[0].timestamp).total_seconds() 
+                timestamps = [(chunk.timestamp - session.chunks[0].timestamp).total_seconds()
                              for chunk in session.chunks]
                 chunk_sizes = [chunk.size_bytes for chunk in session.chunks]
-                
+
                 fig.add_trace(
                     go.Scatter(
                         x=timestamps,
@@ -123,7 +119,7 @@ class AdvancedVisualizer:
                     ),
                     row=1, col=2
                 )
-        
+
         # Throughput Analysis (Top Right)
         session_ids = []
         throughput_values = []
@@ -131,7 +127,7 @@ class AdvancedVisualizer:
             if timing.tokens_per_second:
                 session_ids.append(session_id[:10] + '...')
                 throughput_values.append(timing.tokens_per_second)
-        
+
         if throughput_values:
             fig.add_trace(
                 go.Bar(
@@ -142,7 +138,7 @@ class AdvancedVisualizer:
                 ),
                 row=1, col=3
             )
-        
+
         # Session Performance Box Plot (Bottom Left)
         itl_data = []
         session_labels = []
@@ -150,7 +146,7 @@ class AdvancedVisualizer:
             if timing.itl_values_ms:
                 itl_data.extend(timing.itl_values_ms)
                 session_labels.extend([session_id[:10]] * len(timing.itl_values_ms))
-        
+
         if itl_data:
             fig.add_trace(
                 go.Box(
@@ -161,7 +157,7 @@ class AdvancedVisualizer:
                 ),
                 row=2, col=1
             )
-        
+
         # Quality Indicator (Bottom Middle)
         quality_score = self._calculate_quality_score(result)
         fig.add_trace(
@@ -187,7 +183,7 @@ class AdvancedVisualizer:
             ),
             row=2, col=2
         )
-        
+
         # Quality Breakdown (Bottom Right)
         quality_metrics = ['TTFT', 'ITL', 'Throughput', 'Consistency']
         quality_values = [
@@ -196,7 +192,7 @@ class AdvancedVisualizer:
             min(100, (result.overall_timing_stats.tokens_per_second or 0) * 2),
             quality_score
         ]
-        
+
         fig.add_trace(
             go.Bar(
                 x=quality_metrics,
@@ -206,34 +202,34 @@ class AdvancedVisualizer:
             ),
             row=2, col=3
         )
-        
+
         fig.update_layout(
             height=800,
             title="LLM Streaming Performance Overview",
             showlegend=True,
             template="plotly_white"
         )
-        
+
         return fig
-        
+
     def _create_advanced_timeline(self, result: AnalysisResult) -> go.Figure:
         """Create advanced timeline with interactive features."""
-        
+
         fig = go.Figure()
-        
+
         for i, session in enumerate(result.sessions):
             if not session.chunks:
                 continue
-                
+
             # Create timeline data
             timestamps = [chunk.timestamp for chunk in session.chunks]
             chunk_sizes = [chunk.size_bytes for chunk in session.chunks]
             token_counts = [chunk.token_count for chunk in session.chunks]
-            
+
             # Convert to relative time
             start_time = timestamps[0]
             relative_times = [(ts - start_time).total_seconds() for ts in timestamps]
-            
+
             # Main timeline
             fig.add_trace(
                 go.Scatter(
@@ -258,7 +254,7 @@ class AdvancedVisualizer:
                     customdata=token_counts
                 )
             )
-            
+
             # Add anomaly markers
             timing = result.per_session_timing.get(session.session_id)
             if timing and timing.itl_values_ms:
@@ -266,15 +262,15 @@ class AdvancedVisualizer:
                 itl_mean = statistics.mean(timing.itl_values_ms)
                 itl_std = statistics.stdev(timing.itl_values_ms) if len(timing.itl_values_ms) > 1 else 0
                 threshold = itl_mean + 2 * itl_std
-                
+
                 anomaly_times = []
                 anomaly_sizes = []
-                
+
                 for j, itl in enumerate(timing.itl_values_ms):
                     if itl > threshold and j < len(relative_times):
                         anomaly_times.append(relative_times[j])
                         anomaly_sizes.append(chunk_sizes[j])
-                
+
                 if anomaly_times:
                     fig.add_trace(
                         go.Scatter(
@@ -291,7 +287,7 @@ class AdvancedVisualizer:
                             showlegend=False
                         )
                     )
-        
+
         # Add interactive elements
         fig.update_layout(
             title="Interactive Timeline Analysis",
@@ -325,12 +321,12 @@ class AdvancedVisualizer:
                 ),
             ]
         )
-        
+
         return fig
-        
+
     def _create_statistical_distributions(self, result: AnalysisResult) -> go.Figure:
         """Create comprehensive statistical distribution analysis."""
-        
+
         fig = make_subplots(
             rows=2, cols=2,
             subplot_titles=[
@@ -338,13 +334,13 @@ class AdvancedVisualizer:
                 'Chunk Size Distribution', 'Performance Scatter Matrix'
             ]
         )
-        
+
         # ITL Distribution with statistical fitting
         all_itl_values = []
         for timing in result.per_session_timing.values():
             if timing.itl_values_ms:
                 all_itl_values.extend(timing.itl_values_ms)
-        
+
         if all_itl_values:
             fig.add_trace(
                 go.Histogram(
@@ -356,13 +352,13 @@ class AdvancedVisualizer:
                 ),
                 row=1, col=1
             )
-            
+
             # Add normal distribution overlay
             mean_itl = statistics.mean(all_itl_values)
             std_itl = statistics.stdev(all_itl_values) if len(all_itl_values) > 1 else 0
             x_norm = np.linspace(min(all_itl_values), max(all_itl_values), 100)
             y_norm = (1 / (std_itl * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_norm - mean_itl) / std_itl) ** 2)
-            
+
             fig.add_trace(
                 go.Scatter(
                     x=x_norm,
@@ -373,7 +369,7 @@ class AdvancedVisualizer:
                 ),
                 row=1, col=1
             )
-        
+
         # TTFT vs Throughput scatter
         ttft_vals = []
         throughput_vals = []
@@ -381,7 +377,7 @@ class AdvancedVisualizer:
             if timing.ttft_ms is not None and timing.tokens_per_second is not None:
                 ttft_vals.append(timing.ttft_ms)
                 throughput_vals.append(timing.tokens_per_second)
-        
+
         if ttft_vals and throughput_vals:
             fig.add_trace(
                 go.Scatter(
@@ -397,12 +393,12 @@ class AdvancedVisualizer:
                 ),
                 row=1, col=2
             )
-        
+
         # Chunk size distribution
         all_chunk_sizes = []
         for session in result.sessions:
             all_chunk_sizes.extend([chunk.size_bytes for chunk in session.chunks])
-        
+
         if all_chunk_sizes:
             fig.add_trace(
                 go.Histogram(
@@ -413,18 +409,18 @@ class AdvancedVisualizer:
                 ),
                 row=2, col=1
             )
-        
+
         fig.update_layout(
             height=800,
             title="Statistical Distribution Analysis",
             template="plotly_white"
         )
-        
+
         return fig
-        
+
     def _create_anomaly_detection_viz(self, result: AnalysisResult) -> go.Figure:
         """Create advanced anomaly detection visualization."""
-        
+
         fig = make_subplots(
             rows=2, cols=2,
             subplot_titles=[
@@ -432,24 +428,24 @@ class AdvancedVisualizer:
                 'Pattern Analysis', 'Anomaly Clustering'
             ]
         )
-        
+
         # Anomaly timeline
         for i, session in enumerate(result.sessions[:3]):  # Top 3 sessions
             if not session.chunks:
                 continue
-                
+
             timing = result.per_session_timing.get(session.session_id)
             if not timing or not timing.itl_values_ms:
                 continue
-                
+
             # Detect anomalies using z-score
             itl_values = np.array(timing.itl_values_ms)
             z_scores = np.abs((itl_values - np.mean(itl_values)) / np.std(itl_values))
             anomaly_threshold = 2.5
-            
-            timestamps = [(chunk.timestamp - session.chunks[0].timestamp).total_seconds() 
+
+            timestamps = [(chunk.timestamp - session.chunks[0].timestamp).total_seconds()
                          for chunk in session.chunks[1:]]
-            
+
             # Normal points
             normal_mask = z_scores <= anomaly_threshold
             fig.add_trace(
@@ -462,7 +458,7 @@ class AdvancedVisualizer:
                 ),
                 row=1, col=1
             )
-            
+
             # Anomalous points
             anomaly_mask = z_scores > anomaly_threshold
             if np.any(anomaly_mask):
@@ -480,25 +476,25 @@ class AdvancedVisualizer:
                     ),
                     row=1, col=1
                 )
-        
+
         fig.update_layout(
             height=800,
             title="Advanced Anomaly Detection",
             template="plotly_white"
         )
-        
+
         return fig
-        
+
     def _create_correlation_matrix(self, result: AnalysisResult) -> go.Figure:
         """Create correlation matrix of performance metrics."""
-        
+
         # Prepare data for correlation analysis
         metrics_data = []
         for session_id, timing in result.per_session_timing.items():
             session = next((s for s in result.sessions if s.session_id == session_id), None)
             if not session:
                 continue
-                
+
             row = {
                 'ttft_ms': timing.ttft_ms or 0,
                 'mean_itl_ms': timing.mean_itl_ms or 0,
@@ -510,13 +506,13 @@ class AdvancedVisualizer:
                 'duration_seconds': session.duration_seconds or 0
             }
             metrics_data.append(row)
-        
+
         if not metrics_data:
             return go.Figure()
-            
+
         df = pd.DataFrame(metrics_data)
         correlation_matrix = df.corr()
-        
+
         fig = go.Figure(data=go.Heatmap(
             z=correlation_matrix.values,
             x=correlation_matrix.columns,
@@ -528,61 +524,61 @@ class AdvancedVisualizer:
             textfont={"size": 10},
             hoverongaps=False
         ))
-        
+
         fig.update_layout(
             title="Performance Metrics Correlation Matrix",
             height=600,
             template="plotly_white"
         )
-        
+
         return fig
-        
+
     def _create_performance_clustering(self, result: AnalysisResult) -> go.Figure:
         """Create performance clustering visualization."""
-        
+
         # Prepare data for clustering
         features = []
         session_labels = []
-        
+
         for session_id, timing in result.per_session_timing.items():
-            if (timing.ttft_ms is not None and 
-                timing.mean_itl_ms is not None and 
+            if (timing.ttft_ms is not None and
+                timing.mean_itl_ms is not None and
                 timing.tokens_per_second is not None):
-                
+
                 features.append([
                     timing.ttft_ms,
                     timing.mean_itl_ms,
                     timing.tokens_per_second
                 ])
                 session_labels.append(session_id[:10])
-        
+
         if len(features) < 3:
             return go.Figure()
-            
+
         # Standardize features
         scaler = StandardScaler()
         features_scaled = scaler.fit_transform(features)
-        
+
         # Apply DBSCAN clustering
         clustering = DBSCAN(eps=0.5, min_samples=2)
         cluster_labels = clustering.fit_predict(features_scaled)
-        
+
         # Apply PCA for visualization
         pca = PCA(n_components=2)
         features_pca = pca.fit_transform(features_scaled)
-        
+
         # Create scatter plot
         fig = go.Figure()
-        
+
         unique_labels = set(cluster_labels)
-        colors = [self.color_palette['primary'], self.color_palette['accent'], 
+        colors = [self.color_palette['primary'], self.color_palette['accent'],
                  self.color_palette['success'], self.color_palette['warning']]
-        
+
         for i, label in enumerate(unique_labels):
             mask = cluster_labels == label
             cluster_name = f'Cluster {label}' if label != -1 else 'Outliers'
             color = colors[i % len(colors)] if label != -1 else self.color_palette['danger']
-            
+
             fig.add_trace(
                 go.Scatter(
                     x=features_pca[mask, 0],
@@ -598,7 +594,7 @@ class AdvancedVisualizer:
                     hovertemplate='<b>%{text}</b><br>PC1: %{x:.2f}<br>PC2: %{y:.2f}<extra></extra>'
                 )
             )
-        
+
         fig.update_layout(
             title="Performance Clustering Analysis",
             xaxis_title=f"PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)",
@@ -606,20 +602,20 @@ class AdvancedVisualizer:
             height=600,
             template="plotly_white"
         )
-        
+
         return fig
-        
+
     def _calculate_quality_score(self, result: AnalysisResult) -> float:
         """Calculate overall quality score based on performance metrics."""
-        
+
         if not result.per_session_timing:
             return 0.0
-            
+
         scores = []
-        
+
         for timing in result.per_session_timing.values():
             session_score = 50  # Base score
-            
+
             # TTFT score (lower is better)
             if timing.ttft_ms is not None:
                 if timing.ttft_ms < 100:
@@ -628,7 +624,7 @@ class AdvancedVisualizer:
                     session_score += 10
                 elif timing.ttft_ms > 2000:
                     session_score -= 10
-            
+
             # ITL consistency score
             if timing.std_itl_ms is not None and timing.mean_itl_ms is not None:
                 cv = timing.std_itl_ms / timing.mean_itl_ms if timing.mean_itl_ms > 0 else 1
@@ -638,21 +634,21 @@ class AdvancedVisualizer:
                     session_score += 10
                 elif cv > 1.0:
                     session_score -= 10
-            
+
             # Throughput score
             if timing.tokens_per_second is not None:
                 if timing.tokens_per_second > 50:
                     session_score += 10
                 elif timing.tokens_per_second < 10:
                     session_score -= 10
-            
+
             scores.append(max(0, min(100, session_score)))
-        
+
         return statistics.mean(scores) if scores else 0.0
-        
-    def _create_dashboard_html(self, charts: List[Tuple[str, go.Figure]]) -> str:
+
+    def _create_dashboard_html(self, charts: list[tuple[str, go.Figure]]) -> str:
         """Create comprehensive HTML dashboard."""
-        
+
         # Convert charts to HTML divs
         chart_divs = []
         for title, fig in charts:
@@ -666,7 +662,7 @@ class AdvancedVisualizer:
             div_end = chart_html.rfind('</div>') + 6
             chart_div = chart_html[div_start:div_end]
             chart_divs.append((title, chart_div))
-        
+
         return f"""
 <!DOCTYPE html>
 <html lang="en">
@@ -779,4 +775,4 @@ class AdvancedVisualizer:
     </script>
 </body>
 </html>
-        """ 
+        """

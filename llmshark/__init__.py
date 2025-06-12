@@ -10,9 +10,9 @@ __author__ = "LLMShark Team"
 __email__ = "team@llmshark.dev"
 
 from .analyzer import StreamAnalyzer
-from .models import AnalysisResult, StreamSession, StreamChunk, TimingStats
-from .parser import PCAPParser
 from .comparator import CaptureComparator
+from .models import AnalysisResult, StreamChunk, StreamSession, TimingStats
+from .parser import PCAPParser
 
 __all__ = [
     "StreamAnalyzer",

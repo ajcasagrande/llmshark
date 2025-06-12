@@ -110,6 +110,7 @@ ignore = [
     "S101", # assert-used (we use assert in tests)
     "COM812", # trailing-comma-missing (conflicts with black)
     "ARG002", # unused-method-argument (common in interfaces)
+    "E501", # line-too-long (we use long lines in some strings for readability)
 ]
 
 [tool.ruff.per-file-ignores]

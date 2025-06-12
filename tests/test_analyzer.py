@@ -2,12 +2,12 @@
 Unit tests for LLMShark stream analyzer.
 """
 
-import pytest
 from datetime import datetime, timedelta
-from typing import List
+
+import pytest
 
 from llmshark.analyzer import StreamAnalyzer
-from llmshark.models import StreamSession, TimingStats, AnalysisResult
+from llmshark.models import StreamSession
 
 
 @pytest.mark.unit
@@ -41,7 +41,7 @@ class TestStreamAnalyzer:
         assert timing.ttft_ms is not None
         assert timing.mean_itl_ms is not None
 
-    def test_analyze_multiple_sessions(self, multiple_sessions: List[StreamSession]):
+    def test_analyze_multiple_sessions(self, multiple_sessions: list[StreamSession]):
         """Test analyzing multiple sessions."""
         analyzer = StreamAnalyzer()
         result = analyzer.analyze_sessions(multiple_sessions)
@@ -80,7 +80,7 @@ class TestStreamAnalyzer:
         assert len(result.anomalies.silence_periods) == 0
         assert len(result.anomalies.unusual_patterns) == 0
 
-    def test_session_ranking(self, multiple_sessions: List[StreamSession]):
+    def test_session_ranking(self, multiple_sessions: list[StreamSession]):
         """Test session ranking functionality."""
         analyzer = StreamAnalyzer()
         result = analyzer.analyze_sessions(multiple_sessions)
@@ -142,7 +142,7 @@ class TestStreamAnalyzer:
         # Tokens per second should be reasonable for LLM streaming
         assert session_timing.tokens_per_second < 1000  # Very fast would be < 1000 tps
 
-    def test_aggregate_timing_calculation(self, multiple_sessions: List[StreamSession]):
+    def test_aggregate_timing_calculation(self, multiple_sessions: list[StreamSession]):
         """Test aggregate timing calculations across sessions."""
         analyzer = StreamAnalyzer()
         result = analyzer.analyze_sessions(multiple_sessions)
@@ -195,7 +195,7 @@ class TestAnalyzerAnomalyDetection:
         chunks.append(large_gap_chunk)
 
         # Create session
-        from llmshark.models import StreamSession, HTTPHeaders, ProtocolVersion
+        from llmshark.models import HTTPHeaders, ProtocolVersion, StreamSession
 
         session = StreamSession(
             session_id="gap_test",
@@ -251,7 +251,7 @@ class TestAnalyzerAnomalyDetection:
         chunks.append(silence_chunk)
 
         # Create session
-        from llmshark.models import StreamSession, HTTPHeaders, ProtocolVersion
+        from llmshark.models import HTTPHeaders, ProtocolVersion, StreamSession
 
         session = StreamSession(
             session_id="silence_test",

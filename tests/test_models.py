@@ -2,22 +2,22 @@
 Unit tests for LLMShark models.
 """
 
+from datetime import datetime
+
 import pytest
-from datetime import datetime, timedelta
-from typing import List
 
 from llmshark.models import (
+    AnalysisResult,
+    AnomalyDetection,
+    ComparisonReport,
     CompressionType,
     EventType,
     HTTPHeaders,
     ProtocolVersion,
+    SessionComparison,
     StreamChunk,
     StreamSession,
     TimingStats,
-    AnalysisResult,
-    AnomalyDetection,
-    SessionComparison,
-    ComparisonReport,
 )
 
 
@@ -235,7 +235,7 @@ class TestTimingStats:
 class TestAnalysisResult:
     """Test AnalysisResult model."""
 
-    def test_create_analysis_result(self, multiple_sessions: List[StreamSession]):
+    def test_create_analysis_result(self, multiple_sessions: list[StreamSession]):
         """Test creating analysis result."""
         result = AnalysisResult(
             input_files=[],

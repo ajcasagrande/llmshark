@@ -10,9 +10,8 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
-import numpy as np
 from pydantic import BaseModel, Field, computed_field, validator
 
 
@@ -51,17 +50,17 @@ class StreamChunk(BaseModel):
     sequence_number: int = Field(description="Order of this chunk in the stream")
     size_bytes: int = Field(ge=0, description="Size of the chunk in bytes")
     content: str = Field(description="Raw content of the chunk")
-    event_type: Optional[str] = Field(None, description="SSE event type if specified")
-    event_id: Optional[str] = Field(None, description="SSE event ID if specified")
+    event_type: str | None = Field(None, description="SSE event type if specified")
+    event_id: str | None = Field(None, description="SSE event ID if specified")
     is_first_token: bool = Field(False, description="Whether this is the first token")
     is_last_token: bool = Field(False, description="Whether this is the last token")
-    parse_errors: List[str] = Field(
+    parse_errors: list[str] = Field(
         default_factory=list, description="Any parsing errors"
     )
 
     @computed_field
     @property
-    def tokens_extracted(self) -> List[str]:
+    def tokens_extracted(self) -> list[str]:
         """Extract tokens from the chunk content."""
         # Simple token extraction - can be enhanced based on LLM format
         return self.content.split() if self.content else []
@@ -76,17 +75,17 @@ class StreamChunk(BaseModel):
 class HTTPHeaders(BaseModel):
     """HTTP headers with common fields extracted."""
 
-    content_type: Optional[str] = Field(None, description="Content-Type header")
-    content_length: Optional[int] = Field(None, description="Content-Length header")
-    transfer_encoding: Optional[str] = Field(
+    content_type: str | None = Field(None, description="Content-Type header")
+    content_length: int | None = Field(None, description="Content-Length header")
+    transfer_encoding: str | None = Field(
         None, description="Transfer-Encoding header"
     )
-    content_encoding: Optional[str] = Field(None, description="Content-Encoding header")
-    cache_control: Optional[str] = Field(None, description="Cache-Control header")
-    connection: Optional[str] = Field(None, description="Connection header")
-    user_agent: Optional[str] = Field(None, description="User-Agent header")
-    server: Optional[str] = Field(None, description="Server header")
-    raw_headers: Dict[str, str] = Field(default_factory=dict, description="All headers")
+    content_encoding: str | None = Field(None, description="Content-Encoding header")
+    cache_control: str | None = Field(None, description="Cache-Control header")
+    connection: str | None = Field(None, description="Connection header")
+    user_agent: str | None = Field(None, description="User-Agent header")
+    server: str | None = Field(None, description="Server header")
+    raw_headers: dict[str, str] = Field(default_factory=dict, description="All headers")
 
     @computed_field
     @property
@@ -118,13 +117,13 @@ class StreamSession(BaseModel):
     )
     request_sent: datetime = Field(description="When the HTTP request was sent")
     response_start: datetime = Field(description="When the response started")
-    first_chunk: Optional[datetime] = Field(
+    first_chunk: datetime | None = Field(
         None, description="When the first chunk arrived"
     )
-    last_chunk: Optional[datetime] = Field(
+    last_chunk: datetime | None = Field(
         None, description="When the last chunk arrived"
     )
-    connection_end: Optional[datetime] = Field(
+    connection_end: datetime | None = Field(
         None, description="When connection closed"
     )
 
@@ -138,18 +137,18 @@ class StreamSession(BaseModel):
     response_headers: HTTPHeaders = Field(description="Response headers")
 
     # Stream data
-    chunks: List[StreamChunk] = Field(
+    chunks: list[StreamChunk] = Field(
         default_factory=list, description="All chunks in order"
     )
     total_bytes: int = Field(0, ge=0, description="Total bytes received")
 
     # Metadata
-    capture_file: Optional[Path] = Field(None, description="Source PCAP file")
+    capture_file: Path | None = Field(None, description="Source PCAP file")
     analysis_timestamp: datetime = Field(default_factory=datetime.now)
 
     @computed_field
     @property
-    def duration_seconds(self) -> Optional[float]:
+    def duration_seconds(self) -> float | None:
         """Total session duration in seconds."""
         if self.connection_end:
             return (self.connection_end - self.connection_start).total_seconds()
@@ -159,7 +158,7 @@ class StreamSession(BaseModel):
 
     @computed_field
     @property
-    def streaming_duration_seconds(self) -> Optional[float]:
+    def streaming_duration_seconds(self) -> float | None:
         """Duration of the streaming portion in seconds."""
         if self.first_chunk and self.last_chunk:
             return (self.last_chunk - self.first_chunk).total_seconds()
@@ -182,56 +181,56 @@ class TimingStats(BaseModel):
     """Statistical analysis of timing data."""
 
     # Time to First Token (TTFT)
-    ttft_seconds: Optional[float] = Field(
+    ttft_seconds: float | None = Field(
         None, description="Time to first token in seconds"
     )
-    ttft_ms: Optional[float] = Field(
+    ttft_ms: float | None = Field(
         None, description="Time to first token in milliseconds"
     )
 
     # Inter-Token Latency (ITL)
-    mean_itl_ms: Optional[float] = Field(
+    mean_itl_ms: float | None = Field(
         None, description="Mean inter-token latency in ms"
     )
-    median_itl_ms: Optional[float] = Field(
+    median_itl_ms: float | None = Field(
         None, description="Median inter-token latency in ms"
     )
-    p95_itl_ms: Optional[float] = Field(None, description="95th percentile ITL in ms")
-    p99_itl_ms: Optional[float] = Field(None, description="99th percentile ITL in ms")
-    std_itl_ms: Optional[float] = Field(
+    p95_itl_ms: float | None = Field(None, description="95th percentile ITL in ms")
+    p99_itl_ms: float | None = Field(None, description="99th percentile ITL in ms")
+    std_itl_ms: float | None = Field(
         None, description="Standard deviation of ITL in ms"
     )
-    min_itl_ms: Optional[float] = Field(None, description="Minimum ITL in ms")
-    max_itl_ms: Optional[float] = Field(None, description="Maximum ITL in ms")
+    min_itl_ms: float | None = Field(None, description="Minimum ITL in ms")
+    max_itl_ms: float | None = Field(None, description="Maximum ITL in ms")
 
     # Chunk timing
-    mean_chunk_interval_ms: Optional[float] = Field(
+    mean_chunk_interval_ms: float | None = Field(
         None, description="Mean time between chunks"
     )
-    median_chunk_interval_ms: Optional[float] = Field(
+    median_chunk_interval_ms: float | None = Field(
         None, description="Median time between chunks"
     )
 
     # Throughput
-    tokens_per_second: Optional[float] = Field(
+    tokens_per_second: float | None = Field(
         None, description="Overall tokens per second"
     )
-    bytes_per_second: Optional[float] = Field(
+    bytes_per_second: float | None = Field(
         None, description="Overall bytes per second"
     )
 
     # Raw timing arrays for detailed analysis
-    itl_values_ms: List[float] = Field(
+    itl_values_ms: list[float] = Field(
         default_factory=list, description="All ITL values"
     )
-    chunk_intervals_ms: List[float] = Field(
+    chunk_intervals_ms: list[float] = Field(
         default_factory=list, description="Chunk intervals"
     )
 
     @validator("ttft_ms", pre=True)
     def compute_ttft_ms(
-        cls, v: Optional[float], values: Dict[str, Any]
-    ) -> Optional[float]:
+        cls, v: float | None, values: dict[str, Any]
+    ) -> float | None:
         """Compute TTFT in milliseconds from seconds."""
         ttft_seconds = values.get("ttft_seconds")
         if ttft_seconds is not None:
@@ -242,16 +241,16 @@ class TimingStats(BaseModel):
 class AnomalyDetection(BaseModel):
     """Results of anomaly detection analysis."""
 
-    large_gaps: List[Dict[str, Any]] = Field(
+    large_gaps: list[dict[str, Any]] = Field(
         default_factory=list, description="Detected large gaps"
     )
-    outlier_chunks: List[int] = Field(
+    outlier_chunks: list[int] = Field(
         default_factory=list, description="Chunk indices with outlier timing"
     )
-    unusual_patterns: List[str] = Field(
+    unusual_patterns: list[str] = Field(
         default_factory=list, description="Detected unusual patterns"
     )
-    silence_periods: List[Dict[str, Any]] = Field(
+    silence_periods: list[dict[str, Any]] = Field(
         default_factory=list, description="Periods with no activity"
     )
 
@@ -271,36 +270,36 @@ class SessionComparison(BaseModel):
     session_b_id: str = Field(description="ID of second session")
 
     # Timing comparisons
-    ttft_diff_ms: Optional[float] = Field(
+    ttft_diff_ms: float | None = Field(
         None, description="TTFT difference in ms (B - A)"
     )
-    ttft_diff_percent: Optional[float] = Field(
+    ttft_diff_percent: float | None = Field(
         None, description="TTFT difference as percentage"
     )
 
-    mean_itl_diff_ms: Optional[float] = Field(
+    mean_itl_diff_ms: float | None = Field(
         None, description="Mean ITL difference in ms"
     )
-    mean_itl_diff_percent: Optional[float] = Field(
+    mean_itl_diff_percent: float | None = Field(
         None, description="Mean ITL difference as percentage"
     )
 
     # Statistical tests
-    itl_statistical_significance: Optional[bool] = Field(
+    itl_statistical_significance: bool | None = Field(
         None, description="Whether ITL difference is significant"
     )
-    p_value: Optional[float] = Field(None, description="P-value of statistical test")
+    p_value: float | None = Field(None, description="P-value of statistical test")
 
     # Pattern differences
-    pattern_differences: List[str] = Field(
+    pattern_differences: list[str] = Field(
         default_factory=list, description="Detected pattern differences"
     )
 
     # Quality assessment
-    which_session_better: Optional[str] = Field(
+    which_session_better: str | None = Field(
         None, description="Which session performed better"
     )
-    improvement_suggestions: List[str] = Field(
+    improvement_suggestions: list[str] = Field(
         default_factory=list, description="Suggestions for improvement"
     )
 
@@ -309,12 +308,12 @@ class AnalysisResult(BaseModel):
     """Complete analysis results for one or more PCAP files."""
 
     # Input information
-    input_files: List[Path] = Field(description="PCAP files analyzed")
+    input_files: list[Path] = Field(description="PCAP files analyzed")
     analysis_timestamp: datetime = Field(default_factory=datetime.now)
     analysis_duration_seconds: float = Field(description="How long the analysis took")
 
     # Sessions found
-    sessions: List[StreamSession] = Field(description="All streaming sessions found")
+    sessions: list[StreamSession] = Field(description="All streaming sessions found")
     session_count: int = Field(description="Total number of sessions")
 
     # Aggregate statistics
@@ -328,33 +327,33 @@ class AnalysisResult(BaseModel):
 
     # Timing analysis
     overall_timing_stats: TimingStats = Field(description="Aggregate timing statistics")
-    per_session_timing: Dict[str, TimingStats] = Field(default_factory=dict)
+    per_session_timing: dict[str, TimingStats] = Field(default_factory=dict)
 
     # Anomaly detection
     anomalies: AnomalyDetection = Field(description="Detected anomalies")
 
     # Comparisons (if multiple sessions)
-    session_comparisons: List[SessionComparison] = Field(default_factory=list)
+    session_comparisons: list[SessionComparison] = Field(default_factory=list)
 
     # Quality metrics
-    best_session_id: Optional[str] = Field(
+    best_session_id: str | None = Field(
         None, description="ID of best performing session"
     )
-    worst_session_id: Optional[str] = Field(
+    worst_session_id: str | None = Field(
         None, description="ID of worst performing session"
     )
 
     # Summary insights
-    key_insights: List[str] = Field(
+    key_insights: list[str] = Field(
         default_factory=list, description="Key insights from analysis"
     )
-    recommendations: List[str] = Field(
+    recommendations: list[str] = Field(
         default_factory=list, description="Recommendations"
     )
 
     @computed_field
     @property
-    def average_tokens_per_second(self) -> Optional[float]:
+    def average_tokens_per_second(self) -> float | None:
         """Average tokens per second across all sessions."""
         if self.total_duration_seconds > 0 and self.total_tokens_analyzed > 0:
             return self.total_tokens_analyzed / self.total_duration_seconds
@@ -362,7 +361,7 @@ class AnalysisResult(BaseModel):
 
     @computed_field
     @property
-    def sessions_by_performance(self) -> List[str]:
+    def sessions_by_performance(self) -> list[str]:
         """Session IDs ordered by performance (best first)."""
         session_scores = []
         for session in self.sessions:
@@ -384,35 +383,35 @@ class AnalysisResult(BaseModel):
 class ComparisonReport(BaseModel):
     """Comprehensive comparison report for multiple captures."""
 
-    captures: List[AnalysisResult] = Field(
+    captures: list[AnalysisResult] = Field(
         description="Analysis results for each capture"
     )
     comparison_timestamp: datetime = Field(default_factory=datetime.now)
 
     # Cross-capture statistics
-    best_capture_index: Optional[int] = Field(
+    best_capture_index: int | None = Field(
         None, description="Index of best performing capture"
     )
-    performance_rankings: List[int] = Field(
+    performance_rankings: list[int] = Field(
         default_factory=list, description="Capture indices by performance"
     )
 
     # Aggregate insights
-    common_patterns: List[str] = Field(
+    common_patterns: list[str] = Field(
         default_factory=list, description="Patterns common across captures"
     )
-    unique_patterns: Dict[int, List[str]] = Field(
+    unique_patterns: dict[int, list[str]] = Field(
         default_factory=dict, description="Unique patterns per capture"
     )
 
-    improvement_opportunities: List[str] = Field(
+    improvement_opportunities: list[str] = Field(
         default_factory=list, description="Areas for improvement"
     )
 
     # Statistical summary
-    performance_variance: Optional[float] = Field(
+    performance_variance: float | None = Field(
         None, description="Variance in performance across captures"
     )
-    consistency_score: Optional[float] = Field(
+    consistency_score: float | None = Field(
         None, description="How consistent performance was (0-1)"
     )
