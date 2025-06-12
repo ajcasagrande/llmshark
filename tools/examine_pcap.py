@@ -7,7 +7,7 @@ from scapy.all import rdpcap
 from scapy.layers.http import HTTP, HTTPRequest, HTTPResponse
 from scapy.all import Raw, TCP
 import json
-
+import sys
 
 def examine_pcap(filename):
     """Examine PCAP file structure."""
@@ -130,4 +130,4 @@ def examine_pcap(filename):
 
 
 if __name__ == "__main__":
-    examine_pcap("captures/genai-perf.pcap") 
+    examine_pcap(sys.argv[1]) 

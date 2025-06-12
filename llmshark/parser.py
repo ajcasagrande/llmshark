@@ -207,6 +207,15 @@ class HTTPStreamReassembler:
                 http_response = packet[HTTPResponse]
                 response_timestamp = timestamps[i]
 
+        # If Scapy didn't detect HTTP layers, try to parse raw HTTP data
+        if not (http_request and http_response):
+            parsed_http = self._parse_raw_http_data(packets, timestamps)
+            if parsed_http:
+                http_request = parsed_http["request"]
+                http_response = parsed_http["response"]
+                request_timestamp = parsed_http["request_timestamp"]
+                response_timestamp = parsed_http["response_timestamp"]
+
         if not (http_request and http_response):
             return None
 
@@ -271,14 +280,14 @@ class HTTPStreamReassembler:
             first_chunk=chunks[0].timestamp if chunks else None,
             last_chunk=chunks[-1].timestamp if chunks else None,
             connection_end=timestamps[-1] if len(timestamps) > 1 else None,
-            request_method=getattr(http_request, "Method", b"GET").decode(
+            request_method=self._get_http_field(http_request, "Method", b"GET").decode(
                 "utf-8", errors="ignore"
             ),
-            request_path=getattr(http_request, "Path", b"/").decode(
+            request_path=self._get_http_field(http_request, "Path", b"/").decode(
                 "utf-8", errors="ignore"
             ),
             request_headers=request_headers,
-            response_status=int(getattr(http_response, "Status_Code", b"200")),
+            response_status=int(self._get_http_field(http_response, "Status_Code", b"200")),
             response_headers=response_headers,
             chunks=chunks,
             total_bytes=sum(chunk.size_bytes for chunk in chunks),
@@ -287,12 +296,17 @@ class HTTPStreamReassembler:
         return session
 
     def _parse_http_headers(self, http_layer: any) -> HTTPHeaders:
-        """Parse HTTP headers from scapy HTTP layer."""
+        """Parse HTTP headers from scapy HTTP layer or mock HTTP object."""
         headers = HTTPHeaders()
 
-        if hasattr(http_layer, "fields"):
+        # Handle both Scapy HTTP layers and our mock HTTP objects
+        if hasattr(http_layer, "fields") or isinstance(http_layer, dict):
             raw_headers = {}
-            for field, value in http_layer.fields.items():
+            
+            # Get fields from either Scapy object or our mock dict
+            fields = http_layer.fields if hasattr(http_layer, "fields") else http_layer.get("fields", {})
+            
+            for field, value in fields.items():
                 if isinstance(value, bytes):
                     value = value.decode("utf-8", errors="ignore")
                 raw_headers[field] = str(value)
@@ -300,14 +314,14 @@ class HTTPStreamReassembler:
             headers.raw_headers = raw_headers
 
             # Extract common headers
-            headers.content_type = raw_headers.get("Content-Type")
-            headers.content_length = self._safe_int(raw_headers.get("Content-Length"))
-            headers.transfer_encoding = raw_headers.get("Transfer-Encoding")
-            headers.content_encoding = raw_headers.get("Content-Encoding")
-            headers.cache_control = raw_headers.get("Cache-Control")
-            headers.connection = raw_headers.get("Connection")
-            headers.user_agent = raw_headers.get("User-Agent")
-            headers.server = raw_headers.get("Server")
+            headers.content_type = raw_headers.get("Content-Type") or raw_headers.get("content-type")
+            headers.content_length = self._safe_int(raw_headers.get("Content-Length") or raw_headers.get("content-length"))
+            headers.transfer_encoding = raw_headers.get("Transfer-Encoding") or raw_headers.get("transfer-encoding")
+            headers.content_encoding = raw_headers.get("Content-Encoding") or raw_headers.get("content-encoding")
+            headers.cache_control = raw_headers.get("Cache-Control") or raw_headers.get("cache-control")
+            headers.connection = raw_headers.get("Connection") or raw_headers.get("connection")
+            headers.user_agent = raw_headers.get("User-Agent") or raw_headers.get("user-agent")
+            headers.server = raw_headers.get("Server") or raw_headers.get("server")
 
         return headers
 
@@ -320,9 +334,116 @@ class HTTPStreamReassembler:
         except (ValueError, TypeError):
             return None
 
+    def _parse_raw_http_data(self, packets: List[any], timestamps: List[datetime]) -> Optional[Dict]:
+        """Parse HTTP data from raw TCP packets when Scapy doesn't detect HTTP layers."""
+        request_data = None
+        response_data = None
+        request_timestamp = None
+        response_timestamp = None
+        
+        for i, packet in enumerate(packets):
+            if Raw in packet and TCP in packet:
+                try:
+                    raw_data = bytes(packet[Raw])
+                    text_data = raw_data.decode('utf-8', errors='ignore')
+                    
+                    # Check for HTTP request
+                    if text_data.startswith(('GET ', 'POST ', 'PUT ', 'DELETE ', 'HEAD ', 'OPTIONS ', 'PATCH ')):
+                        request_data = self._create_mock_http_request(text_data)
+                        request_timestamp = timestamps[i]
+                    
+                    # Check for HTTP response
+                    elif text_data.startswith('HTTP/'):
+                        response_data = self._create_mock_http_response(text_data)
+                        response_timestamp = timestamps[i]
+                        
+                except (UnicodeDecodeError, AttributeError):
+                    continue
+        
+        if request_data and response_data:
+            return {
+                "request": request_data,
+                "response": response_data,
+                "request_timestamp": request_timestamp,
+                "response_timestamp": response_timestamp
+            }
+        
+        return None
+
+    def _create_mock_http_request(self, text_data: str) -> Dict:
+        """Create a mock HTTP request object from raw text data."""
+        lines = text_data.split('\r\n')
+        if not lines:
+            return None
+            
+        # Parse request line
+        request_line = lines[0]
+        parts = request_line.split(' ')
+        if len(parts) < 3:
+            return None
+            
+        method = parts[0]
+        path = parts[1]
+        version = parts[2]
+        
+        # Parse headers
+        headers = {}
+        for line in lines[1:]:
+            if ':' in line:
+                key, value = line.split(':', 1)
+                headers[key.strip()] = value.strip()
+            elif line.strip() == '':
+                break
+        
+        return {
+            'Method': method.encode('utf-8'),
+            'Path': path.encode('utf-8'),
+            'Http_Version': version.encode('utf-8'),
+            'fields': headers
+        }
+
+    def _create_mock_http_response(self, text_data: str) -> Dict:
+        """Create a mock HTTP response object from raw text data."""
+        lines = text_data.split('\r\n')
+        if not lines:
+            return None
+            
+        # Parse status line
+        status_line = lines[0]
+        parts = status_line.split(' ')
+        if len(parts) < 3:
+            return None
+            
+        version = parts[0]
+        status_code = parts[1]
+        reason_phrase = ' '.join(parts[2:])
+        
+        # Parse headers
+        headers = {}
+        for line in lines[1:]:
+            if ':' in line:
+                key, value = line.split(':', 1)
+                headers[key.strip()] = value.strip()
+            elif line.strip() == '':
+                break
+        
+        return {
+            'Http_Version': version.encode('utf-8'),
+            'Status_Code': status_code.encode('utf-8'),
+            'Reason_Phrase': reason_phrase.encode('utf-8'),
+            'fields': headers
+        }
+
+    def _get_http_field(self, http_obj: any, field_name: str, default: any = None) -> any:
+        """Get field from HTTP object (Scapy or mock)."""
+        if isinstance(http_obj, dict):
+            return http_obj.get(field_name, default)
+        else:
+            return getattr(http_obj, field_name, default)
+
     def _detect_http_version(self, http_request: any) -> ProtocolVersion:
         """Detect HTTP version from request."""
-        version = getattr(http_request, "Http_Version", b"HTTP/1.1")
+        version = self._get_http_field(http_request, "Http_Version", b"HTTP/1.1")
         if isinstance(version, bytes):
             version = version.decode("utf-8", errors="ignore")
 

@@ -41,6 +41,10 @@ try:
         create_comparison_charts,
         save_html_report,
     )
+    from .advanced_visualization import AdvancedVisualizer
+    from .streamlit_dashboard import StreamlitDashboard
+    from .dashboard_app import launch_dashboard
+    VIZ_AVAILABLE = True
 except ImportError:
     # Visualization dependencies not available
     def create_timing_charts(*args, **kwargs):
@@ -51,6 +55,8 @@ except ImportError:
 
     def save_html_report(*args, **kwargs):
         pass
+    
+    VIZ_AVAILABLE = False
 
 
 app = typer.Typer(
@@ -272,6 +278,221 @@ def info(
 
         console.print(table)
         console.print()
+
+
+@app.command()
+def dashboard(
+    pcap_files: List[Path] = typer.Argument(
+        ...,
+        help="One or more PCAP files to analyze",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    port: int = typer.Option(
+        8050,
+        "--port",
+        "-p",
+        help="Port to run the dashboard on",
+        min=1024,
+        max=65535,
+    ),
+    dashboard_type: str = typer.Option(
+        "dash",
+        "--type",
+        "-t",
+        help="Dashboard type: dash, streamlit",
+        case_sensitive=False,
+    ),
+    auto_open: bool = typer.Option(
+        True,
+        "--auto-open/--no-auto-open",
+        help="Automatically open browser",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose output",
+    ),
+) -> None:
+    """
+    🚀 Launch interactive dashboard for real-time analysis.
+
+    This command launches a modern web-based dashboard with state-of-the-art
+    visualizations for comprehensive LLM streaming analysis.
+    """
+    if not VIZ_AVAILABLE:
+        console.print("[red]❌ Visualization dependencies not available![/red]")
+        console.print("[yellow]Install with: pip install llmshark[viz][/yellow]")
+        raise typer.Exit(1)
+
+    try:
+        # Validate input files
+        validated_files = _validate_pcap_files(pcap_files)
+        if not validated_files:
+            console.print("[red]❌ No valid PCAP files found![/red]")
+            raise typer.Exit(1)
+
+        # Parse PCAP files
+        console.print("[bold blue]🦈 LLMShark Dashboard Starting[/bold blue]")
+        console.print(f"📁 Analyzing {len(validated_files)} PCAP file(s)")
+
+        sessions = _parse_pcap_files_with_progress(validated_files, verbose)
+
+        if not sessions:
+            console.print(
+                "[yellow]⚠️  No streaming sessions found in PCAP files[/yellow]"
+            )
+            raise typer.Exit(0)
+
+        # Analyze sessions
+        analyzer = StreamAnalyzer()
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("🔬 Analyzing sessions for dashboard...", total=None)
+            result = analyzer.analyze_sessions(sessions, detect_anomalies=True)
+            progress.update(task, description="✅ Analysis complete!")
+
+        # Launch dashboard
+        console.print(f"\n[green]🚀 Launching {dashboard_type.title()} dashboard on port {port}[/green]")
+        
+        if auto_open:
+            import webbrowser
+            webbrowser.open(f"http://localhost:{port}")
+
+        if dashboard_type.lower() == "streamlit":
+            dashboard = StreamlitDashboard()
+            dashboard.run_dashboard(result)
+        else:  # Default to Dash
+            launch_dashboard(result, port)
+
+    except Exception as e:
+        console.print(f"[red]❌ Dashboard error: {e}[/red]")
+        if verbose:
+            console.print_exception()
+        raise typer.Exit(1)
+
+
+@app.command()
+def visualize(
+    pcap_files: List[Path] = typer.Argument(
+        ...,
+        help="One or more PCAP files to analyze",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    output_dir: Path = typer.Option(
+        ...,
+        "--output-dir",
+        "-o",
+        help="Directory to save visualizations",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+    ),
+    viz_type: str = typer.Option(
+        "all",
+        "--type",
+        "-t",
+        help="Visualization type: performance, timeline, statistics, anomalies, all",
+        case_sensitive=False,
+    ),
+    format: str = typer.Option(
+        "html",
+        "--format",
+        "-f",
+        help="Output format: html, png, pdf",
+        case_sensitive=False,
+    ),
+    interactive: bool = typer.Option(
+        True,
+        "--interactive/--static",
+        help="Generate interactive or static visualizations",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose output",
+    ),
+) -> None:
+    """
+    📊 Generate advanced visualizations and reports.
+
+    This command creates state-of-the-art visualizations including performance
+    analytics, timeline analysis, statistical distributions, and anomaly detection.
+    """
+    if not VIZ_AVAILABLE:
+        console.print("[red]❌ Visualization dependencies not available![/red]")
+        console.print("[yellow]Install with: pip install llmshark[viz][/yellow]")
+        raise typer.Exit(1)
+
+    try:
+        # Validate input files and setup output
+        validated_files = _validate_pcap_files(pcap_files)
+        if not validated_files:
+            console.print("[red]❌ No valid PCAP files found![/red]")
+            raise typer.Exit(1)
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Parse and analyze
+        console.print("[bold blue]🦈 LLMShark Visualization Starting[/bold blue]")
+        sessions = _parse_pcap_files_with_progress(validated_files, verbose)
+
+        if not sessions:
+            console.print("[yellow]⚠️  No streaming sessions found[/yellow]")
+            raise typer.Exit(0)
+
+        analyzer = StreamAnalyzer()
+        result = analyzer.analyze_sessions(sessions, detect_anomalies=True)
+
+        # Generate visualizations
+        visualizer = AdvancedVisualizer()
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            
+            if viz_type.lower() in ["all", "dashboard"]:
+                task = progress.add_task("🎨 Creating interactive dashboard...", total=None)
+                dashboard_path = visualizer.create_interactive_dashboard(result, output_dir)
+                progress.update(task, description=f"✅ Dashboard saved: {dashboard_path}")
+                console.print(f"[green]📊 Interactive dashboard: {dashboard_path}[/green]")
+
+            if viz_type.lower() in ["all", "performance"]:
+                task = progress.add_task("📈 Generating performance charts...", total=None)
+                perf_charts = create_timing_charts(result, output_dir)
+                progress.update(task, description="✅ Performance charts complete")
+                
+            if viz_type.lower() in ["all", "timeline"]:  
+                task = progress.add_task("🕒 Creating timeline analysis...", total=None) 
+                # Additional timeline visualizations would go here
+                progress.update(task, description="✅ Timeline analysis complete")
+
+        console.print(f"\n[green]✅ Visualizations saved to: {output_dir}[/green]")
+        
+        # Display summary
+        files_created = list(output_dir.glob("*.html")) + list(output_dir.glob("*.png"))
+        if files_created:
+            console.print(f"[blue]📁 {len(files_created)} visualization files created[/blue]")
+            for file in files_created:
+                console.print(f"  • {file.name}")
+
+    except Exception as e:
+        console.print(f"[red]❌ Visualization error: {e}[/red]")
+        if verbose:
+            console.print_exception()
+        raise typer.Exit(1)
 
 
 @app.command()

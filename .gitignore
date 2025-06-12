@@ -203,3 +203,5 @@ output/
 .env.production.local 
 
 captures/
+demo_visualizations/
+visualizations/
